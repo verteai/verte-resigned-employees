@@ -1,4 +1,4 @@
-<?php
+<?php //-- this is a test system only
 // ─── DATABASE CONFIG ───────────────────────────────────────────────
 $db_host = '172.16.29.45';
 $db_user = 'DB_Admin';
