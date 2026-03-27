@@ -1,4 +1,4 @@
-<?php //-- this is a test system only
+<?php
 // ─── DATABASE CONFIG ───────────────────────────────────────────────
 $db_host = '172.16.29.45';
 $db_user = 'DB_Admin';
@@ -17,55 +17,102 @@ if (!$conn) {
 
 mysqli_set_charset($conn, 'utf8');
 
-// ─── HELPER: normalise date ────────────────────────────────────────
+// ─── HELPERS ──────────────────────────────────────────────────────
 function normalise_date($val) {
     $val = trim($val);
+    if ($val === '') return '';
     if (is_numeric($val)) {
         $unix = ($val - 25569) * 86400;
         return date('Y-m-d', $unix);
     }
     $ts = strtotime($val);
-    if ($ts !== false) {
-        return date('Y-m-d', $ts);
-    }
+    if ($ts !== false) return date('Y-m-d', $ts);
     return $val;
 }
 
-// ─── HELPER: get field with alias fallbacks ────────────────────────
 function get_field($row, $keys) {
     foreach ($keys as $k) {
-        if (isset($row[$k]) && trim($row[$k]) !== '') {
-            return trim($row[$k]);
-        }
+        if (isset($row[$k]) && trim($row[$k]) !== '') return trim($row[$k]);
     }
     return '';
 }
 
-// ─── HANDLE ACTIONS ───────────────────────────────────────────────
+function chk($val) {
+    // Normalise checkbox values from CSV/form to 1 or 0
+    $v = strtolower(trim($val));
+    return ($v === '1' || $v === 'yes' || $v === 'true' || $v === 'on') ? 1 : 0;
+}
+
+function tick($val) {
+    return $val ? '<span class="tick tick-yes">&#10003;</span>' : '<span class="tick tick-no">&#8212;</span>';
+}
+
+// ─── DOWNLOAD CSV ─────────────────────────────────────────────────
+if (isset($_GET['download']) && $_GET['download'] === 'csv') {
+    header('Content-Type: text/csv; charset=utf-8');
+    header('Content-Disposition: attachment; filename="resigned_employees_' . date('Y-m-d') . '.csv"');
+    $out = fopen('php://output', 'w');
+    // BOM for Excel UTF-8
+    fputs($out, "\xEF\xBB\xBF");
+    fputcsv($out, array('ID','Employee ID','Name','Email','Department','Position','Manager','Hire Date','Resign Date','Clearance Date','Reason','WiFi','GO+','IMAPPS','XO/SCANPACK'));
+    $res = mysqli_query($conn, "SELECT * FROM res ORDER BY resign_date DESC");
+    while ($row = mysqli_fetch_assoc($res)) {
+        fputcsv($out, array(
+            $row['id'],
+            isset($row['employee_id'])   ? $row['employee_id']   : '',
+            $row['name'],
+            $row['email'],
+            $row['department'],
+            $row['position'],
+            isset($row['manager'])       ? $row['manager']       : '',
+            $row['hire_date'],
+            $row['resign_date'],
+            isset($row['clearance_date'])? $row['clearance_date']: '',
+            $row['reason'],
+            isset($row['wifi'])          ? ($row['wifi']     ? 'Yes' : 'No') : 'No',
+            isset($row['goplus'])        ? ($row['goplus']   ? 'Yes' : 'No') : 'No',
+            isset($row['imapps'])        ? ($row['imapps']   ? 'Yes' : 'No') : 'No',
+            isset($row['xo_scanpack'])   ? ($row['xo_scanpack'] ? 'Yes' : 'No') : 'No'
+        ));
+    }
+    fclose($out);
+    mysqli_close($conn);
+    exit;
+}
+
+// ─── HANDLE POST ACTIONS ──────────────────────────────────────────
 $message     = '';
 $messageType = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (isset($_POST['action'])) {
 
-        // ── SINGLE ADD ──────────────────────────────────────────────
+        // ── ADD ──────────────────────────────────────────────────
         if ($_POST['action'] === 'add') {
-            $employee_id = mysqli_real_escape_string($conn, trim($_POST['employee_id']));
-            $name        = mysqli_real_escape_string($conn, trim($_POST['name']));
-            $department  = mysqli_real_escape_string($conn, trim($_POST['department']));
-            $position    = mysqli_real_escape_string($conn, trim($_POST['position']));
-            $email       = mysqli_real_escape_string($conn, trim($_POST['email']));
-            $hire_date   = mysqli_real_escape_string($conn, $_POST['hire_date']);
-            $resign_date = mysqli_real_escape_string($conn, $_POST['resign_date']);
-            $reason      = mysqli_real_escape_string($conn, trim($_POST['reason']));
+            $employee_id   = mysqli_real_escape_string($conn, trim($_POST['employee_id']));
+            $name          = mysqli_real_escape_string($conn, trim($_POST['name']));
+            $department    = mysqli_real_escape_string($conn, trim($_POST['department']));
+            $position      = mysqli_real_escape_string($conn, trim($_POST['position']));
+            $email         = mysqli_real_escape_string($conn, trim($_POST['email']));
+            $manager       = mysqli_real_escape_string($conn, trim($_POST['manager']));
+            $hire_date     = mysqli_real_escape_string($conn, $_POST['hire_date']);
+            $resign_date   = mysqli_real_escape_string($conn, $_POST['resign_date']);
+            $clearance_date= mysqli_real_escape_string($conn, $_POST['clearance_date']);
+            $reason        = mysqli_real_escape_string($conn, trim($_POST['reason']));
+            $wifi          = isset($_POST['wifi'])       ? 1 : 0;
+            $goplus        = isset($_POST['goplus'])     ? 1 : 0;
+            $imapps        = isset($_POST['imapps'])     ? 1 : 0;
+            $xo_scanpack   = isset($_POST['xo_scanpack'])? 1 : 0;
 
             $check = mysqli_query($conn, "SELECT id FROM res WHERE employee_id = '$employee_id'");
             if (mysqli_num_rows($check) > 0) {
                 $message     = "Employee ID '$employee_id' already exists in the database.";
                 $messageType = 'error';
             } else {
-                $sql = "INSERT INTO res (employee_id, name, department, position, email, hire_date, resign_date, reason)
-                        VALUES ('$employee_id','$name','$department','$position','$email','$hire_date','$resign_date','$reason')";
+                $sql = "INSERT INTO res
+                        (employee_id, name, department, position, email, manager, hire_date, resign_date, clearance_date, reason, wifi, goplus, imapps, xo_scanpack)
+                        VALUES
+                        ('$employee_id','$name','$department','$position','$email','$manager','$hire_date','$resign_date','$clearance_date','$reason',$wifi,$goplus,$imapps,$xo_scanpack)";
                 if (mysqli_query($conn, $sql)) {
                     $message     = "Employee '$name' (ID: $employee_id) has been added successfully.";
                     $messageType = 'success';
@@ -75,7 +122,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
             }
 
-        // ── DELETE ──────────────────────────────────────────────────
+        // ── DELETE ───────────────────────────────────────────────
         } elseif ($_POST['action'] === 'delete') {
             $id  = (int)$_POST['delete_id'];
             $res = mysqli_query($conn, "SELECT name, employee_id FROM res WHERE id = $id");
@@ -93,9 +140,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $messageType = 'error';
             }
 
-        // ── CSV IMPORT ──────────────────────────────────────────────
+        // ── CSV IMPORT ───────────────────────────────────────────
         } elseif ($_POST['action'] === 'import_csv') {
-
             $import_ok = true;
 
             if (!isset($_FILES['csv_file']) || $_FILES['csv_file']['error'] !== UPLOAD_ERR_OK) {
@@ -105,8 +151,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
 
             if ($import_ok) {
-                $origName = $_FILES['csv_file']['name'];
-                $ext      = strtolower(pathinfo($origName, PATHINFO_EXTENSION));
+                $ext = strtolower(pathinfo($_FILES['csv_file']['name'], PATHINFO_EXTENSION));
                 if ($ext !== 'csv') {
                     $message     = "Please upload a .csv file. In Excel: File > Save As > CSV (Comma delimited).";
                     $messageType = 'error';
@@ -115,9 +160,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
 
             if ($import_ok) {
-                $tmpFile = $_FILES['csv_file']['tmp_name'];
-                $handle  = fopen($tmpFile, 'r');
-
+                $handle = fopen($_FILES['csv_file']['tmp_name'], 'r');
                 if ($handle === false) {
                     $message     = "Could not open the uploaded file.";
                     $messageType = 'error';
@@ -125,7 +168,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 } else {
                     $rows   = array();
                     $header = null;
-
                     while (($line = fgetcsv($handle)) !== false) {
                         if ($header === null) {
                             $line[0] = str_replace("\xEF\xBB\xBF", '', $line[0]);
@@ -146,33 +188,39 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     foreach ($rows as $row) {
                         $rowNum++;
 
-                        $emp_id     = get_field($row, array('employee_id', 'emp_id'));
-                        $r_name     = get_field($row, array('name', 'full_name'));
-                        $r_dept     = get_field($row, array('department', 'dept'));
-                        $r_position = get_field($row, array('position', 'job_title', 'title'));
-                        $r_email    = get_field($row, array('email', 'email_address'));
-                        $r_hire     = get_field($row, array('hire_date', 'hiredate', 'date_hired'));
-                        $r_resign   = get_field($row, array('resign_date', 'resigndate', 'date_resigned'));
-                        $r_reason   = get_field($row, array('reason', 'resignation_reason'));
+                        $emp_id     = get_field($row, array('employee_id','emp_id'));
+                        $r_name     = get_field($row, array('name','full_name'));
+                        $r_dept     = get_field($row, array('department','dept'));
+                        $r_position = get_field($row, array('position','job_title','title'));
+                        $r_email    = get_field($row, array('email','email_address'));
+                        $r_manager  = get_field($row, array('manager','direct_manager'));
+                        $r_hire     = get_field($row, array('hire_date','hiredate','date_hired'));
+                        $r_resign   = get_field($row, array('resign_date','resigndate','date_resigned'));
+                        $r_clearance= get_field($row, array('clearance_date','clearancedate'));
+                        $r_reason   = get_field($row, array('reason','resignation_reason'));
+                        $r_wifi     = chk(get_field($row, array('wifi')));
+                        $r_goplus   = chk(get_field($row, array('goplus','go+')));
+                        $r_imapps   = chk(get_field($row, array('imapps')));
+                        $r_xo       = chk(get_field($row, array('xo_scanpack','xo/scanpack','xo')));
 
-                        if ($emp_id === '' && $r_name === '') {
-                            continue;
-                        }
+                        if ($emp_id === '' && $r_name === '') continue;
 
                         if ($emp_id === '' || $r_name === '' || $r_dept === '' || $r_position === '' || $r_hire === '' || $r_resign === '') {
                             $skipped++;
-                            $errors[] = "Row $rowNum: Missing required field(s) - employee_id, name, department, position, hire_date, resign_date are all required.";
+                            $errors[] = "Row $rowNum: Missing required field(s) — employee_id, name, department, position, hire_date, resign_date required.";
                             continue;
                         }
 
-                        $r_hire   = normalise_date($r_hire);
-                        $r_resign = normalise_date($r_resign);
+                        $r_hire     = normalise_date($r_hire);
+                        $r_resign   = normalise_date($r_resign);
+                        $r_clearance= normalise_date($r_clearance);
 
                         $emp_id     = mysqli_real_escape_string($conn, $emp_id);
                         $r_name     = mysqli_real_escape_string($conn, $r_name);
                         $r_dept     = mysqli_real_escape_string($conn, $r_dept);
                         $r_position = mysqli_real_escape_string($conn, $r_position);
                         $r_email    = mysqli_real_escape_string($conn, $r_email);
+                        $r_manager  = mysqli_real_escape_string($conn, $r_manager);
                         $r_reason   = mysqli_real_escape_string($conn, $r_reason);
 
                         $dup = mysqli_query($conn, "SELECT id FROM res WHERE employee_id = '$emp_id'");
@@ -182,8 +230,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             continue;
                         }
 
-                        $sql = "INSERT INTO res (employee_id, name, department, position, email, hire_date, resign_date, reason)
-                                VALUES ('$emp_id','$r_name','$r_dept','$r_position','$r_email','$r_hire','$r_resign','$r_reason')";
+                        $sql = "INSERT INTO res
+                                (employee_id, name, department, position, email, manager, hire_date, resign_date, clearance_date, reason, wifi, goplus, imapps, xo_scanpack)
+                                VALUES
+                                ('$emp_id','$r_name','$r_dept','$r_position','$r_email','$r_manager','$r_hire','$r_resign','$r_clearance','$r_reason',$r_wifi,$r_goplus,$r_imapps,$r_xo)";
                         if (mysqli_query($conn, $sql)) {
                             $imported++;
                         } else {
@@ -195,9 +245,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $message = "Import complete: <strong>$imported</strong> record(s) added, <strong>$skipped</strong> skipped.";
                     if (!empty($errors)) {
                         $message .= "<ul style='margin-top:8px;padding-left:18px;font-size:0.82rem'>";
-                        foreach ($errors as $err) {
-                            $message .= "<li>" . htmlspecialchars($err) . "</li>";
-                        }
+                        foreach ($errors as $err) $message .= "<li>" . htmlspecialchars($err) . "</li>";
                         $message .= "</ul>";
                     }
                     $messageType = ($skipped > 0) ? 'info' : 'success';
@@ -225,9 +273,7 @@ foreach ($employees as $emp) {
 $recent       = 0;
 $sixMonthsAgo = date('Y-m-d', strtotime('-6 months'));
 foreach ($employees as $emp) {
-    if ($emp['resign_date'] >= $sixMonthsAgo) {
-        $recent++;
-    }
+    if ($emp['resign_date'] >= $sixMonthsAgo) $recent++;
 }
 
 $totalDays = 0;
@@ -272,11 +318,11 @@ $view = isset($_GET['view']) ? $_GET['view'] : 'dashboard';
 
         .layout { display:-webkit-box; display:flex; min-height:100vh; }
 
+        /* ── SIDEBAR ── */
         .sidebar {
             width: 240px;
             background: var(--ink);
             color: #fff;
-            -webkit-box-flex: 0;
             flex-shrink: 0;
             display: -webkit-box;
             display: flex;
@@ -307,7 +353,7 @@ $view = isset($_GET['view']) ? $_GET['view'] : 'dashboard';
             text-transform: uppercase;
         }
 
-        .sidebar-nav { padding:16px 0; -webkit-box-flex:1; flex:1; }
+        .sidebar-nav { padding:16px 0; flex:1; }
 
         .nav-item {
             display: -webkit-box;
@@ -333,7 +379,8 @@ $view = isset($_GET['view']) ? $_GET['view'] : 'dashboard';
             color: #555;
         }
 
-        .main { -webkit-box-flex:1; flex:1; padding:36px 40px; overflow-y:auto; }
+        /* ── MAIN ── */
+        .main { flex:1; padding:36px 40px; overflow-y:auto; }
 
         .page-header { margin-bottom:32px; }
 
@@ -357,6 +404,7 @@ $view = isset($_GET['view']) ? $_GET['view'] : 'dashboard';
         .alert-info    { background:#e8f0fb; color:var(--info);    border:1px solid #b8d0ef; }
         .alert-error   { background:#fdf0ee; color:var(--accent);  border:1px solid #f5c3b5; }
 
+        /* ── STATS ── */
         .stats-grid {
             display: -webkit-box;
             display: flex;
@@ -373,7 +421,6 @@ $view = isset($_GET['view']) ? $_GET['view'] : 'dashboard';
             border: 1px solid var(--border);
             position: relative;
             overflow: hidden;
-            -webkit-box-flex: 1;
             flex: 1;
             min-width: 160px;
         }
@@ -384,6 +431,7 @@ $view = isset($_GET['view']) ? $_GET['view'] : 'dashboard';
             top:0; left:0; right:0;
             height: 3px;
         }
+
         .stat-card.orange::before { background:var(--accent); }
         .stat-card.blue::before   { background:var(--info); }
         .stat-card.green::before  { background:var(--success); }
@@ -407,6 +455,7 @@ $view = isset($_GET['view']) ? $_GET['view'] : 'dashboard';
 
         .stat-sub { font-size:0.78rem; color:var(--muted); margin-top:6px; }
 
+        /* ── DEPT BARS ── */
         .dept-section {
             background: var(--card);
             border-radius: 12px;
@@ -438,6 +487,7 @@ $view = isset($_GET['view']) ? $_GET['view'] : 'dashboard';
         .dept-bar-track { background:#f0ece4; border-radius:4px; height:8px; overflow:hidden; }
         .dept-bar-fill  { height:100%; border-radius:4px; background:var(--accent); }
 
+        /* ── TABLE ── */
         .table-card {
             background: var(--card);
             border-radius: 12px;
@@ -445,6 +495,8 @@ $view = isset($_GET['view']) ? $_GET['view'] : 'dashboard';
             border: 1px solid var(--border);
             overflow: hidden;
         }
+
+        .table-wrapper { overflow-x: auto; }
 
         .table-header {
             padding: 20px 24px;
@@ -459,7 +511,7 @@ $view = isset($_GET['view']) ? $_GET['view'] : 'dashboard';
             flex-wrap: wrap;
         }
 
-        .table-header-actions { display:-webkit-box; display:flex; gap:10px; }
+        .table-header-actions { display:-webkit-box; display:flex; gap:10px; flex-wrap:wrap; }
 
         .btn {
             display: inline-block;
@@ -473,8 +525,9 @@ $view = isset($_GET['view']) ? $_GET['view'] : 'dashboard';
             text-decoration: none;
         }
 
-        .btn-primary   { background:var(--accent); color:#fff; }
-        .btn-green     { background:#2d7a4f; color:#fff; }
+        .btn-primary  { background:var(--accent); color:#fff; }
+        .btn-green    { background:#2d7a4f; color:#fff; }
+        .btn-blue     { background:var(--info); color:#fff; }
 
         .btn-danger {
             background: transparent;
@@ -490,22 +543,23 @@ $view = isset($_GET['view']) ? $_GET['view'] : 'dashboard';
             border: 1.5px solid var(--border);
         }
 
-        table { width:100%; border-collapse:collapse; font-size:0.875rem; }
+        table { width:100%; border-collapse:collapse; font-size:0.82rem; }
 
         thead th {
-            padding: 12px 16px;
+            padding: 11px 14px;
             text-align: left;
             background: #faf8f5;
-            font-size: 0.75rem;
+            font-size: 0.72rem;
             font-weight: 600;
             color: var(--muted);
             text-transform: uppercase;
-            letter-spacing: 0.07em;
+            letter-spacing: 0.06em;
             border-bottom: 1px solid var(--border);
+            white-space: nowrap;
         }
 
         tbody td {
-            padding: 14px 16px;
+            padding: 12px 14px;
             border-bottom: 1px solid var(--border);
             vertical-align: middle;
         }
@@ -513,14 +567,14 @@ $view = isset($_GET['view']) ? $_GET['view'] : 'dashboard';
         tbody tr:last-child td { border-bottom:none; }
         tbody tr:hover td { background:#faf8f5; }
 
-        .emp-name  { font-weight:600; }
-        .emp-email { font-size:0.78rem; color:var(--muted); margin-top:2px; }
+        .emp-name  { font-weight:600; font-size:0.875rem; }
+        .emp-email { font-size:0.75rem; color:var(--muted); margin-top:2px; }
 
         .emp-id-badge {
             display: inline-block;
             background: #f0ece4;
             color: #555;
-            font-size: 0.7rem;
+            font-size: 0.68rem;
             font-weight: 600;
             padding: 2px 7px;
             border-radius: 4px;
@@ -531,13 +585,55 @@ $view = isset($_GET['view']) ? $_GET['view'] : 'dashboard';
         .badge { display:inline-block; padding:3px 10px; border-radius:99px; font-size:0.72rem; font-weight:600; }
         .badge-resigned { background:#fdf0ee; color:var(--accent); }
 
+        /* ── TICK ── */
+        .tick {
+            display: inline-block;
+            font-size: 0.9rem;
+            font-weight: 700;
+            width: 22px;
+            text-align: center;
+        }
+        .tick-yes { color: var(--success); }
+        .tick-no  { color: #ccc; }
+
+        /* ── CLEARANCE ROW ── */
+        .clearance-chips {
+            display: -webkit-box;
+            display: flex;
+            gap: 4px;
+            flex-wrap: wrap;
+        }
+        .chip {
+            font-size: 0.65rem;
+            font-weight: 700;
+            padding: 2px 6px;
+            border-radius: 4px;
+            letter-spacing: 0.03em;
+        }
+        .chip-done   { background:#d4edda; color:#155724; }
+        .chip-undone { background:#f0ece4; color:#aaa; text-decoration:line-through; }
+
+        /* ── FORM ── */
         .form-card {
             background: var(--card);
             border-radius: 12px;
             padding: 32px;
             box-shadow: var(--shadow);
             border: 1px solid var(--border);
-            max-width: 720px;
+            max-width: 780px;
+        }
+
+        .form-section-label {
+            font-family: 'Syne', sans-serif;
+            font-size: 0.8rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: var(--muted);
+            margin: 24px 0 14px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid var(--border);
+            width: 100%;
         }
 
         .form-grid { display:-webkit-box; display:flex; flex-wrap:wrap; gap:18px; }
@@ -550,11 +646,12 @@ $view = isset($_GET['view']) ? $_GET['view'] : 'dashboard';
             gap: 6px;
             width: calc(50% - 9px);
         }
-        .form-group.full { width:100%; }
+        .form-group.full  { width:100%; }
+        .form-group.third { width:calc(33.333% - 12px); }
 
         label { font-size:0.8rem; font-weight:600; }
 
-        input, select, textarea {
+        input[type=text], input[type=email], input[type=date], select, textarea {
             padding: 10px 13px;
             border: 1.5px solid var(--border);
             border-radius: 7px;
@@ -566,15 +663,58 @@ $view = isset($_GET['view']) ? $_GET['view'] : 'dashboard';
             width: 100%;
         }
 
-        input:focus, select:focus, textarea:focus {
+        input[type=text]:focus, input[type=email]:focus,
+        input[type=date]:focus, select:focus, textarea:focus {
             border-color: var(--accent);
             background: #fff;
         }
 
         textarea { resize:vertical; min-height:80px; }
 
+        /* ── CHECKBOX GROUP ── */
+        .checkbox-group {
+            display: -webkit-box;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            padding: 4px 0;
+            width: 100%;
+        }
+
+        .checkbox-item {
+            display: -webkit-box;
+            display: flex;
+            -webkit-box-align: center;
+            align-items: center;
+            gap: 8px;
+            background: #faf8f5;
+            border: 1.5px solid var(--border);
+            border-radius: 8px;
+            padding: 10px 16px;
+            cursor: pointer;
+            font-size: 0.85rem;
+            font-weight: 600;
+            -webkit-user-select: none;
+            user-select: none;
+        }
+
+        .checkbox-item input[type=checkbox] {
+            width: 16px;
+            height: 16px;
+            cursor: pointer;
+            margin: 0;
+            padding: 0;
+            border: none;
+            background: none;
+        }
+
+        .checkbox-item:hover { border-color:var(--accent); background:#fff; }
+
+        .checkbox-item input[type=checkbox]:checked + span { color: var(--success); }
+
         .form-actions { margin-top:24px; display:-webkit-box; display:flex; gap:12px; }
 
+        /* ── IMPORT PAGE ── */
         .import-card {
             background: var(--card);
             border-radius: 12px;
@@ -682,9 +822,10 @@ $view = isset($_GET['view']) ? $_GET['view'] : 'dashboard';
         <?php endif; ?>
 
         <?php if ($view === 'dashboard'): ?>
+        <!-- ═══════════ DASHBOARD ═══════════════════════════════ -->
         <div class="page-header">
             <h2>Dashboard</h2>
-            <p>Overview of resigned employee records &mdash; table <strong>res</strong></p>
+            <p>Overview of resigned employee records</p>
         </div>
 
         <div class="stats-grid">
@@ -739,6 +880,7 @@ $view = isset($_GET['view']) ? $_GET['view'] : 'dashboard';
                 <p>No records yet. <a href="?view=add">Add your first entry.</a></p>
             </div>
             <?php else: ?>
+            <div class="table-wrapper">
             <table>
                 <thead>
                     <tr>
@@ -747,6 +889,7 @@ $view = isset($_GET['view']) ? $_GET['view'] : 'dashboard';
                         <th>Department</th>
                         <th>Position</th>
                         <th>Resign Date</th>
+                        <th>Clearance</th>
                         <th>Status</th>
                     </tr>
                 </thead>
@@ -761,15 +904,18 @@ $view = isset($_GET['view']) ? $_GET['view'] : 'dashboard';
                         <td><?php echo htmlspecialchars($emp['department']); ?></td>
                         <td><?php echo htmlspecialchars($emp['position']); ?></td>
                         <td><?php echo htmlspecialchars($emp['resign_date']); ?></td>
+                        <td><?php echo htmlspecialchars(isset($emp['clearance_date']) ? $emp['clearance_date'] : '-'); ?></td>
                         <td><span class="badge badge-resigned">Resigned</span></td>
                     </tr>
                     <?php endforeach; ?>
                 </tbody>
             </table>
+            </div>
             <?php endif; ?>
         </div>
 
         <?php elseif ($view === 'list'): ?>
+        <!-- ═══════════ ALL RECORDS ═════════════════════════════ -->
         <div class="page-header">
             <h2>All Records</h2>
             <p><?php echo $totalResigned; ?> resigned employee<?php echo ($totalResigned !== 1) ? 's' : ''; ?> in database</p>
@@ -779,8 +925,9 @@ $view = isset($_GET['view']) ? $_GET['view'] : 'dashboard';
             <div class="table-header">
                 <span class="section-title" style="margin:0">Employee Records</span>
                 <div class="table-header-actions">
-                    <a href="?view=import" class="btn btn-green">&#8679; Import CSV</a>
-                    <a href="?view=add"    class="btn btn-primary">&#43; Add Employee</a>
+                    <a href="?download=csv" class="btn btn-blue">&#8595; Download CSV</a>
+                    <a href="?view=import"  class="btn btn-green">&#8679; Import CSV</a>
+                    <a href="?view=add"     class="btn btn-primary">&#43; Add Employee</a>
                 </div>
             </div>
             <?php if (empty($employees)): ?>
@@ -789,21 +936,34 @@ $view = isset($_GET['view']) ? $_GET['view'] : 'dashboard';
                 <p>No resigned employees on file. <a href="?view=add">Add one now.</a></p>
             </div>
             <?php else: ?>
+            <div class="table-wrapper">
             <table>
                 <thead>
                     <tr>
-                        <th>Employee ID</th>
+                        <th>Emp ID</th>
                         <th>Name</th>
-                        <th>Department</th>
+                        <th>Dept</th>
                         <th>Position</th>
+                        <th>Manager</th>
                         <th>Hired</th>
                         <th>Resigned</th>
+                        <th>Clearance</th>
+                        <th>WiFi</th>
+                        <th>GO+</th>
+                        <th>IMAPPS</th>
+                        <th>XO/SCAN</th>
                         <th>Reason</th>
                         <th>Action</th>
                     </tr>
                 </thead>
                 <tbody>
                     <?php foreach ($employees as $emp): ?>
+                    <?php
+                        $wifi_val   = isset($emp['wifi'])       ? (int)$emp['wifi']       : 0;
+                        $goplus_val = isset($emp['goplus'])     ? (int)$emp['goplus']     : 0;
+                        $imapps_val = isset($emp['imapps'])     ? (int)$emp['imapps']     : 0;
+                        $xo_val     = isset($emp['xo_scanpack'])? (int)$emp['xo_scanpack']: 0;
+                    ?>
                     <tr>
                         <td><span class="emp-id-badge"><?php echo htmlspecialchars(isset($emp['employee_id']) ? $emp['employee_id'] : '-'); ?></span></td>
                         <td>
@@ -812,9 +972,15 @@ $view = isset($_GET['view']) ? $_GET['view'] : 'dashboard';
                         </td>
                         <td><?php echo htmlspecialchars($emp['department']); ?></td>
                         <td><?php echo htmlspecialchars($emp['position']); ?></td>
-                        <td><?php echo htmlspecialchars($emp['hire_date']); ?></td>
-                        <td><?php echo htmlspecialchars($emp['resign_date']); ?></td>
-                        <td style="max-width:160px;font-size:0.82rem;color:#888"><?php echo htmlspecialchars($emp['reason']); ?></td>
+                        <td style="font-size:0.8rem"><?php echo htmlspecialchars(isset($emp['manager']) ? $emp['manager'] : '-'); ?></td>
+                        <td style="white-space:nowrap"><?php echo htmlspecialchars($emp['hire_date']); ?></td>
+                        <td style="white-space:nowrap"><?php echo htmlspecialchars($emp['resign_date']); ?></td>
+                        <td style="white-space:nowrap"><?php echo htmlspecialchars(isset($emp['clearance_date']) ? $emp['clearance_date'] : '-'); ?></td>
+                        <td style="text-align:center"><?php echo tick($wifi_val); ?></td>
+                        <td style="text-align:center"><?php echo tick($goplus_val); ?></td>
+                        <td style="text-align:center"><?php echo tick($imapps_val); ?></td>
+                        <td style="text-align:center"><?php echo tick($xo_val); ?></td>
+                        <td style="max-width:140px;font-size:0.78rem;color:#888"><?php echo htmlspecialchars($emp['reason']); ?></td>
                         <td>
                             <form method="POST" onsubmit="return confirm('Remove this record?')">
                                 <input type="hidden" name="action"    value="delete">
@@ -826,19 +992,25 @@ $view = isset($_GET['view']) ? $_GET['view'] : 'dashboard';
                     <?php endforeach; ?>
                 </tbody>
             </table>
+            </div>
             <?php endif; ?>
         </div>
 
         <?php elseif ($view === 'add'): ?>
+        <!-- ═══════════ ADD RECORD ══════════════════════════════ -->
         <div class="page-header">
             <h2>Add Resigned Employee</h2>
-            <p>Record will be saved to table <strong>res</strong></p>
+            <p>Record will be saved to database</p>
         </div>
 
         <div class="form-card">
             <form method="POST">
                 <input type="hidden" name="action" value="add">
                 <div class="form-grid">
+
+                    <!-- Employee Info -->
+                    <div class="form-section-label">Employee Information</div>
+
                     <div class="form-group">
                         <label for="employee_id">Employee ID *</label>
                         <input type="text" id="employee_id" name="employee_id" required placeholder="e.g. EMP-00123">
@@ -848,8 +1020,12 @@ $view = isset($_GET['view']) ? $_GET['view'] : 'dashboard';
                         <input type="text" id="name" name="name" required placeholder="e.g. Maria Santos">
                     </div>
                     <div class="form-group">
-                        <label for="email">Email Address</label>
-                        <input type="email" id="email" name="email" placeholder="maria@company.com">
+                        <label for="email">Email Address *</label>
+                        <input type="email" id="email" name="email" required placeholder="maria@company.com">
+                    </div>
+                    <div class="form-group">
+                        <label for="manager">Direct Manager</label>
+                        <input type="text" id="manager" name="manager" placeholder="e.g. Juan dela Cruz">
                     </div>
                     <div class="form-group">
                         <label for="department">Department *</label>
@@ -870,9 +1046,10 @@ $view = isset($_GET['view']) ? $_GET['view'] : 'dashboard';
                         <label for="position">Position / Job Title *</label>
                         <input type="text" id="position" name="position" required placeholder="e.g. Senior Developer">
                     </div>
-                    <div class="form-group">
-                        <!-- spacer -->
-                    </div>
+
+                    <!-- Dates -->
+                    <div class="form-section-label">Dates</div>
+
                     <div class="form-group">
                         <label for="hire_date">Hire Date *</label>
                         <input type="date" id="hire_date" name="hire_date" required>
@@ -881,10 +1058,47 @@ $view = isset($_GET['view']) ? $_GET['view'] : 'dashboard';
                         <label for="resign_date">Resignation Date *</label>
                         <input type="date" id="resign_date" name="resign_date" required>
                     </div>
+                    <div class="form-group">
+                        <label for="clearance_date">Clearance Date *</label>
+                        <input type="date" id="clearance_date" name="clearance_date">
+                    </div>
+                    <div class="form-group">
+                        <!-- spacer -->
+                    </div>
+
+                    <!-- Account Clearance -->
+                    <div class="form-section-label">Account Clearance</div>
+
+                    <div class="form-group full">
+                        <label>Accounts Cleared</label>
+                        <div class="checkbox-group">
+                            <label class="checkbox-item">
+                                <input type="checkbox" name="wifi" value="1">
+                                <span>WiFi</span>
+                            </label>
+                            <label class="checkbox-item">
+                                <input type="checkbox" name="goplus" value="1">
+                                <span>GO+</span>
+                            </label>
+                            <label class="checkbox-item">
+                                <input type="checkbox" name="imapps" value="1">
+                                <span>IMAPPS</span>
+                            </label>
+                            <label class="checkbox-item">
+                                <input type="checkbox" name="xo_scanpack" value="1">
+                                <span>XO/SCANPACK</span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <!-- Reason -->
+                    <div class="form-section-label">Resignation Details</div>
+
                     <div class="form-group full">
                         <label for="reason">Reason for Resignation</label>
                         <textarea id="reason" name="reason" placeholder="e.g. Career advancement, personal reasons, relocation..."></textarea>
                     </div>
+
                 </div>
                 <div class="form-actions">
                     <button type="submit" class="btn btn-primary">Save to Database</button>
@@ -894,6 +1108,7 @@ $view = isset($_GET['view']) ? $_GET['view'] : 'dashboard';
         </div>
 
         <?php elseif ($view === 'import'): ?>
+        <!-- ═══════════ IMPORT CSV ══════════════════════════════ -->
         <div class="page-header">
             <h2>Import CSV</h2>
             <p>Upload a <strong>.csv</strong> file to mass-import resigned employee records</p>
@@ -921,9 +1136,16 @@ $view = isset($_GET['view']) ? $_GET['view'] : 'dashboard';
                     <span class="col-pill">hire_date</span>
                     <span class="col-pill">resign_date</span>
                     <span class="col-pill optional">email</span>
+                    <span class="col-pill optional">manager</span>
+                    <span class="col-pill optional">clearance_date</span>
                     <span class="col-pill optional">reason</span>
+                    <span class="col-pill optional">wifi</span>
+                    <span class="col-pill optional">goplus</span>
+                    <span class="col-pill optional">imapps</span>
+                    <span class="col-pill optional">xo_scanpack</span>
                     <p style="margin-top:10px;font-size:0.8rem;">
-                        Grey pills are optional. Dates accepted as <strong>YYYY-MM-DD</strong> or <strong>MM/DD/YYYY</strong>.
+                        Grey pills are optional. Dates: <strong>YYYY-MM-DD</strong> or <strong>MM/DD/YYYY</strong>.
+                        For checkbox columns use <strong>1</strong> or <strong>Yes</strong> to mark as cleared.
                         Duplicate employee IDs are skipped automatically.<br><br>
                         <strong>To export from Excel:</strong> File &gt; Save As &gt; CSV (Comma delimited) (.csv)
                     </p>
