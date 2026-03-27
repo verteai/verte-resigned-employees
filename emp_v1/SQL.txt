@@ -1,24 +1,39 @@
--- Run this in phpMyAdmin > Import, or paste in the SQL tab
-CREATE DATABASE IF NOT EXISTS resigned_emp;
-
-USE resigned_emp;
-
-CREATE TABLE IF NOT EXISTS res (
-    id          INT AUTO_INCREMENT PRIMARY KEY,
-    employee_id VARCHAR(50)   NOT NULL,
-    name        VARCHAR(100)  NOT NULL,
-    department  VARCHAR(100)  NOT NULL,
-    position    VARCHAR(100)  NOT NULL,
-    email       VARCHAR(150)  NOT NULL,
-    hire_date   DATE          NOT NULL,
-    resign_date DATE          NOT NULL,
-    reason      TEXT,
-    status      VARCHAR(20)   DEFAULT 'resigned',
-    created_at  TIMESTAMP     DEFAULT CURRENT_TIMESTAMP
-);
-
--- Sample data
-INSERT INTO res (employee_id ,name, department, position, email, hire_date, resign_date, reason) VALUES
-('001', 'Maria Santos',   'Engineering', 'Senior Developer',  'maria@company.com', '2019-03-15', '2024-01-10', 'Career advancement'),
-('002', 'Juan dela Cruz', 'Marketing',   'Marketing Manager', 'juan@company.com',  '2018-07-01', '2023-11-30', 'Personal reasons'),
-('003', 'Ana Reyes',      'HR',          'HR Specialist',     'ana@company.com',   '2021-02-20', '2024-06-15', 'Relocation');
+-- ================================================================
+-- Resigned Employee Registry
+-- Database Setup Script
+-- Run this in phpMyAdmin > SQL tab
+-- ================================================================
+ 
+-- 1. Create the database
+CREATE DATABASE IF NOT EXISTS `resigned_emp`
+  DEFAULT CHARACTER SET utf8
+  DEFAULT COLLATE utf8_general_ci;
+ 
+USE `resigned_emp`;
+ 
+-- 2. Drop table if it already exists (clean slate)
+DROP TABLE IF EXISTS `res`;
+ 
+-- 3. Create the main table
+CREATE TABLE `res` (
+  `id`             INT(11)       NOT NULL AUTO_INCREMENT,
+  `employee_id`    VARCHAR(50)   NOT NULL,
+  `name`           VARCHAR(150)  NOT NULL,
+  `email`          VARCHAR(150)  NOT NULL DEFAULT '',
+  `department`     VARCHAR(100)  NOT NULL,
+  `position`       VARCHAR(100)  NOT NULL,
+  `manager`        VARCHAR(100)  NOT NULL DEFAULT '',
+  `hire_date`      DATE          NOT NULL,
+  `resign_date`    DATE          NOT NULL,
+  `clearance_date` DATE          NULL DEFAULT NULL,
+  `reason`         TEXT,
+  `wifi`           TINYINT(1)    NOT NULL DEFAULT 0,
+  `goplus`         TINYINT(1)    NOT NULL DEFAULT 0,
+  `imapps`         TINYINT(1)    NOT NULL DEFAULT 0,
+  `xo_scanpack`    TINYINT(1)    NOT NULL DEFAULT 0,
+  `created_at`     TIMESTAMP     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_employee_id` (`employee_id`),
+  KEY `idx_resign_date`   (`resign_date`),
+  KEY `idx_department`    (`department`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8;
