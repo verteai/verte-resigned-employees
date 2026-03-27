@@ -1,0 +1,24 @@
+-- Run this in phpMyAdmin > Import, or paste in the SQL tab
+CREATE DATABASE IF NOT EXISTS resigned_emp;
+
+USE resigned_emp;
+
+CREATE TABLE IF NOT EXISTS res (
+    id          INT AUTO_INCREMENT PRIMARY KEY,
+    employee_id VARCHAR(50)   NOT NULL,
+    name        VARCHAR(100)  NOT NULL,
+    department  VARCHAR(100)  NOT NULL,
+    position    VARCHAR(100)  NOT NULL,
+    email       VARCHAR(150)  NOT NULL,
+    hire_date   DATE          NOT NULL,
+    resign_date DATE          NOT NULL,
+    reason      TEXT,
+    status      VARCHAR(20)   DEFAULT 'resigned',
+    created_at  TIMESTAMP     DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Sample data
+INSERT INTO res (employee_id ,name, department, position, email, hire_date, resign_date, reason) VALUES
+('001', 'Maria Santos',   'Engineering', 'Senior Developer',  'maria@company.com', '2019-03-15', '2024-01-10', 'Career advancement'),
+('002', 'Juan dela Cruz', 'Marketing',   'Marketing Manager', 'juan@company.com',  '2018-07-01', '2023-11-30', 'Personal reasons'),
+('003', 'Ana Reyes',      'HR',          'HR Specialist',     'ana@company.com',   '2021-02-20', '2024-06-15', 'Relocation');
