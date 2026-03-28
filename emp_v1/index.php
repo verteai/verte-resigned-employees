@@ -951,7 +951,7 @@ $view = isset($_GET['view']) ? $_GET['view'] : 'dashboard';
                         <th>WiFi</th>
                         <th>GO+</th>
                         <th>IMAPPS</th>
-                        <th>XO/SCAN</th>
+                        <th>XO/SCANPACK</th>
                         <th>Reason</th>
                         <th>Action</th>
                     </tr>
