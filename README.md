@@ -77,7 +77,7 @@ $db_name = 'resigned_emp';   // Database name (must match setup_database.sql)
 Navigate to:
 
 ```
-http://localhost/emp/
+http://localhost/resination/
 ```
 
 ---
