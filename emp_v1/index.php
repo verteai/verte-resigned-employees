@@ -1162,7 +1162,7 @@ if ($view === 'edit' && $edit_emp === null && isset($_GET['id'])) {
         ?>
         <div class="page-header">
             <h2><?php echo $is_edit ? 'Edit Record' : 'Add Resigned Employee'; ?></h2>
-            <p><?php echo $is_edit ? 'Updating record for <strong>' . e($edit_emp['name']) . '</strong>' : 'Record will be saved to table <strong>res</strong>'; ?></p>
+            <p><?php echo $is_edit ? 'Updating record for <strong>' . e($edit_emp['name']) . '</strong>' : 'Record will be saved to the database'; ?></p>
         </div>
 
         <div class="form-card">
