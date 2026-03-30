@@ -4,7 +4,7 @@ $db_host = '172.16.29.45';
 $db_user = 'DB_Admin';
 $db_pass = 'luthasdbsrv@2022';
 $db_name = 'resigned_emp';
-/* TEST */
+
 $conn = mysqli_connect($db_host, $db_user, $db_pass, $db_name);
 
 if (!$conn) {
@@ -38,13 +38,18 @@ function get_field($row, $keys) {
 }
 
 function chk($val) {
-    // Normalise checkbox values from CSV/form to 1 or 0
     $v = strtolower(trim($val));
     return ($v === '1' || $v === 'yes' || $v === 'true' || $v === 'on') ? 1 : 0;
 }
 
 function tick($val) {
-    return $val ? '<span class="tick tick-yes">&#10003;</span>' : '<span class="tick tick-no">&#8212;</span>';
+    return $val
+        ? '<span class="tick tick-yes">&#10003;</span>'
+        : '<span class="tick tick-no">&#8212;</span>';
+}
+
+function e($str) {
+    return htmlspecialchars($str, ENT_QUOTES, 'UTF-8');
 }
 
 // ─── DOWNLOAD CSV ─────────────────────────────────────────────────
@@ -52,27 +57,32 @@ if (isset($_GET['download']) && $_GET['download'] === 'csv') {
     header('Content-Type: text/csv; charset=utf-8');
     header('Content-Disposition: attachment; filename="resigned_employees_' . date('Y-m-d') . '.csv"');
     $out = fopen('php://output', 'w');
-    // BOM for Excel UTF-8
-    fputs($out, "\xEF\xBB\xBF");
-    fputcsv($out, array('ID','Employee ID','Name','Email','Department','Position','Manager','Hire Date','Resign Date','Clearance Date','Reason','WiFi','GO+','IMAPPS','XO/SCANPACK'));
-    $res = mysqli_query($conn, "SELECT * FROM res ORDER BY resign_date DESC");
+    fputs($out, "\xEF\xBB\xBF"); // BOM for Excel
+    fputcsv($out, array(
+        'Week', 'Effective Date', 'Employee ID', 'Name', 'Hire Date',
+        'Group', 'HR Summary', 'Department', 'Position',
+        'Clearance Date', 'Wifi', 'GoPlus', 'Imapps', 'XO/Scanpack',
+        'Email Address', 'AD/Email'
+    ));
+    $res = mysqli_query($conn, "SELECT * FROM res ORDER BY effective_date DESC");
     while ($row = mysqli_fetch_assoc($res)) {
         fputcsv($out, array(
-            $row['id'],
-            isset($row['employee_id'])   ? $row['employee_id']   : '',
+            isset($row['week'])           ? $row['week']           : '',
+            isset($row['effective_date']) ? $row['effective_date'] : '',
+            isset($row['employee_id'])    ? $row['employee_id']    : '',
             $row['name'],
-            $row['email'],
+            isset($row['date_hired'])     ? $row['date_hired']     : '',
+            isset($row['grp'])            ? $row['grp']            : '',
+            isset($row['hr_summary'])     ? $row['hr_summary']     : '',
             $row['department'],
             $row['position'],
-            isset($row['manager'])       ? $row['manager']       : '',
-            $row['hire_date'],
-            $row['resign_date'],
-            isset($row['clearance_date'])? $row['clearance_date']: '',
-            $row['reason'],
-            isset($row['wifi'])          ? ($row['wifi']     ? 'Yes' : 'No') : 'No',
-            isset($row['goplus'])        ? ($row['goplus']   ? 'Yes' : 'No') : 'No',
-            isset($row['imapps'])        ? ($row['imapps']   ? 'Yes' : 'No') : 'No',
-            isset($row['xo_scanpack'])   ? ($row['xo_scanpack'] ? 'Yes' : 'No') : 'No'
+            isset($row['clearance_date']) ? $row['clearance_date'] : '',
+            isset($row['wifi'])           ? ($row['wifi']        ? 'Yes' : 'No') : 'No',
+            isset($row['goplus'])         ? ($row['goplus']      ? 'Yes' : 'No') : 'No',
+            isset($row['imapps'])         ? ($row['imapps']      ? 'Yes' : 'No') : 'No',
+            isset($row['xo_scanpack'])    ? ($row['xo_scanpack'] ? 'Yes' : 'No') : 'No',
+            isset($row['email_address'])  ? $row['email_address']  : '',
+            isset($row['ad_email'])       ? $row['ad_email']       : ''
         ));
     }
     fclose($out);
@@ -89,35 +99,91 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         // ── ADD ──────────────────────────────────────────────────
         if ($_POST['action'] === 'add') {
-            $employee_id   = mysqli_real_escape_string($conn, trim($_POST['employee_id']));
-            $name          = mysqli_real_escape_string($conn, trim($_POST['name']));
-            $department    = mysqli_real_escape_string($conn, trim($_POST['department']));
-            $position      = mysqli_real_escape_string($conn, trim($_POST['position']));
-            $email         = mysqli_real_escape_string($conn, trim($_POST['email']));
-            $manager       = mysqli_real_escape_string($conn, trim($_POST['manager']));
-            $hire_date     = mysqli_real_escape_string($conn, $_POST['hire_date']);
-            $resign_date   = mysqli_real_escape_string($conn, $_POST['resign_date']);
-            $clearance_date= mysqli_real_escape_string($conn, $_POST['clearance_date']);
-            $reason        = mysqli_real_escape_string($conn, trim($_POST['reason']));
-            $wifi          = isset($_POST['wifi'])       ? 1 : 0;
-            $goplus        = isset($_POST['goplus'])     ? 1 : 0;
-            $imapps        = isset($_POST['imapps'])     ? 1 : 0;
-            $xo_scanpack   = isset($_POST['xo_scanpack'])? 1 : 0;
+            $week           = mysqli_real_escape_string($conn, trim($_POST['week']));
+            $effective_date = mysqli_real_escape_string($conn, trim($_POST['effective_date']));
+            $employee_id    = mysqli_real_escape_string($conn, trim($_POST['employee_id']));
+            $name           = mysqli_real_escape_string($conn, trim($_POST['name']));
+            $date_hired     = mysqli_real_escape_string($conn, trim($_POST['date_hired']));
+            $grp            = mysqli_real_escape_string($conn, trim($_POST['grp']));
+            $hr_summary     = mysqli_real_escape_string($conn, trim($_POST['hr_summary']));
+            $department     = mysqli_real_escape_string($conn, trim($_POST['department']));
+            $position       = mysqli_real_escape_string($conn, trim($_POST['position']));
+            $clearance_date = mysqli_real_escape_string($conn, trim($_POST['clearance_date']));
+            $wifi           = isset($_POST['wifi'])        ? 1 : 0;
+            $goplus         = isset($_POST['goplus'])      ? 1 : 0;
+            $imapps         = isset($_POST['imapps'])      ? 1 : 0;
+            $xo_scanpack    = isset($_POST['xo_scanpack']) ? 1 : 0;
+            $ad_email       = mysqli_real_escape_string($conn, trim($_POST['ad_email']));
+            $email_address  = mysqli_real_escape_string($conn, trim($_POST['email_address']));
 
-            $check = mysqli_query($conn, "SELECT id FROM res WHERE employee_id = '$employee_id'");
+            $check = mysqli_query($conn, "SELECT id FROM res WHERE employee_id = '$employee_id' AND effective_date = '$effective_date'");
             if (mysqli_num_rows($check) > 0) {
-                $message     = "Employee ID '$employee_id' already exists in the database.";
+                $message     = "A record for Employee ID '$employee_id' with the same Effective Date already exists.";
                 $messageType = 'error';
             } else {
+                $cd_val = ($clearance_date !== '') ? "'$clearance_date'" : 'NULL';
                 $sql = "INSERT INTO res
-                        (employee_id, name, department, position, email, manager, hire_date, resign_date, clearance_date, reason, wifi, goplus, imapps, xo_scanpack)
+                        (week, effective_date, employee_id, name, date_hired, grp, hr_summary, department, position, clearance_date, wifi, goplus, imapps, xo_scanpack, email_address, ad_email)
                         VALUES
-                        ('$employee_id','$name','$department','$position','$email','$manager','$hire_date','$resign_date','$clearance_date','$reason',$wifi,$goplus,$imapps,$xo_scanpack)";
+                        ('$week','$effective_date','$employee_id','$name','$date_hired','$grp','$hr_summary','$department','$position',$cd_val,$wifi,$goplus,$imapps,$xo_scanpack,'$email_address','$ad_email')";
                 if (mysqli_query($conn, $sql)) {
-                    $message     = "Employee '$name' (ID: $employee_id) has been added successfully.";
+                    $message     = "Record for '$name' (ID: $employee_id) added successfully.";
                     $messageType = 'success';
                 } else {
-                    $message     = "Error adding employee: " . mysqli_error($conn);
+                    $message     = "Error adding record: " . mysqli_error($conn);
+                    $messageType = 'error';
+                }
+            }
+
+        // ── EDIT ─────────────────────────────────────────────────
+        } elseif ($_POST['action'] === 'edit') {
+            $id             = (int)$_POST['edit_id'];
+            $week           = mysqli_real_escape_string($conn, trim($_POST['week']));
+            $effective_date = mysqli_real_escape_string($conn, trim($_POST['effective_date']));
+            $employee_id    = mysqli_real_escape_string($conn, trim($_POST['employee_id']));
+            $name           = mysqli_real_escape_string($conn, trim($_POST['name']));
+            $date_hired     = mysqli_real_escape_string($conn, trim($_POST['date_hired']));
+            $grp            = mysqli_real_escape_string($conn, trim($_POST['grp']));
+            $hr_summary     = mysqli_real_escape_string($conn, trim($_POST['hr_summary']));
+            $department     = mysqli_real_escape_string($conn, trim($_POST['department']));
+            $position       = mysqli_real_escape_string($conn, trim($_POST['position']));
+            $clearance_date = mysqli_real_escape_string($conn, trim($_POST['clearance_date']));
+            $wifi           = isset($_POST['wifi'])        ? 1 : 0;
+            $goplus         = isset($_POST['goplus'])      ? 1 : 0;
+            $imapps         = isset($_POST['imapps'])      ? 1 : 0;
+            $xo_scanpack    = isset($_POST['xo_scanpack']) ? 1 : 0;
+            $ad_email       = mysqli_real_escape_string($conn, trim($_POST['ad_email']));
+            $email_address  = mysqli_real_escape_string($conn, trim($_POST['email_address']));
+
+            $dup = mysqli_query($conn, "SELECT id FROM res WHERE employee_id = '$employee_id' AND effective_date = '$effective_date' AND id != $id");
+            if (mysqli_num_rows($dup) > 0) {
+                $message     = "Another record for Employee ID '$employee_id' with the same Effective Date already exists.";
+                $messageType = 'error';
+            } else {
+                $cd_val = ($clearance_date !== '') ? "'$clearance_date'" : 'NULL';
+                $sql = "UPDATE res SET
+                            week           = '$week',
+                            effective_date = '$effective_date',
+                            employee_id    = '$employee_id',
+                            name           = '$name',
+                            date_hired     = '$date_hired',
+                            grp            = '$grp',
+                            hr_summary     = '$hr_summary',
+                            department     = '$department',
+                            position       = '$position',
+                            clearance_date = $cd_val,
+                            wifi           = $wifi,
+                            goplus         = $goplus,
+                            imapps         = $imapps,
+                            xo_scanpack    = $xo_scanpack,
+                            email_address  = '$email_address',
+                            ad_email       = '$ad_email'
+                        WHERE id = $id";
+                if (mysqli_query($conn, $sql)) {
+                    $message     = "Record for '$name' (ID: $employee_id) updated successfully.";
+                    $messageType = 'success';
+                } else {
+                    $message     = "Error updating record: " . mysqli_error($conn);
                     $messageType = 'error';
                 }
             }
@@ -129,14 +195,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $row = mysqli_fetch_assoc($res);
             if ($row) {
                 if (mysqli_query($conn, "DELETE FROM res WHERE id = $id")) {
-                    $message     = "Employee '{$row['name']}' (ID: {$row['employee_id']}) has been removed.";
+                    $message     = "Record for '{$row['name']}' (ID: {$row['employee_id']}) removed.";
                     $messageType = 'info';
                 } else {
                     $message     = "Error deleting: " . mysqli_error($conn);
                     $messageType = 'error';
                 }
             } else {
-                $message     = "Employee not found.";
+                $message     = "Record not found.";
                 $messageType = 'error';
             }
 
@@ -145,7 +211,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $import_ok = true;
 
             if (!isset($_FILES['csv_file']) || $_FILES['csv_file']['error'] !== UPLOAD_ERR_OK) {
-                $message     = "No file uploaded or an upload error occurred.";
+                $message     = "No file uploaded or upload error occurred.";
                 $messageType = 'error';
                 $import_ok   = false;
             }
@@ -188,52 +254,55 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     foreach ($rows as $row) {
                         $rowNum++;
 
-                        $emp_id     = get_field($row, array('employee_id','emp_id'));
-                        $r_name     = get_field($row, array('name','full_name'));
-                        $r_dept     = get_field($row, array('department','dept'));
-                        $r_position = get_field($row, array('position','job_title','title'));
-                        $r_email    = get_field($row, array('email','email_address'));
-                        $r_manager  = get_field($row, array('manager','direct_manager'));
-                        $r_hire     = get_field($row, array('hire_date','hiredate','date_hired'));
-                        $r_resign   = get_field($row, array('resign_date','resigndate','date_resigned'));
-                        $r_clearance= get_field($row, array('clearance_date','clearancedate'));
-                        $r_reason   = get_field($row, array('reason','resignation_reason'));
-                        $r_wifi     = chk(get_field($row, array('wifi')));
-                        $r_goplus   = chk(get_field($row, array('goplus','go+')));
-                        $r_imapps   = chk(get_field($row, array('imapps')));
-                        $r_xo       = chk(get_field($row, array('xo_scanpack','xo/scanpack','xo')));
+                        $r_week    = get_field($row, array('week'));
+                        $r_effdate = get_field($row, array('effective_date','effective date','effdate'));
+                        $r_empid   = get_field($row, array('employee_id','employee id','emp_id'));
+                        $r_name    = get_field($row, array('name','full_name'));
+                        $r_hired   = get_field($row, array('date_hired','date hired','hire_date'));
+                        $r_grp     = get_field($row, array('group','grp'));
+                        $r_hrsumm  = get_field($row, array('hr_summary','hr summary','hrsummary'));
+                        $r_dept    = get_field($row, array('department','dept'));
+                        $r_pos     = get_field($row, array('position','job_title','title'));
+                        $r_clear   = get_field($row, array('clearance_date','clearance date'));
+                        $r_wifi    = chk(get_field($row, array('wifi')));
+                        $r_goplus  = chk(get_field($row, array('goplus','go+')));
+                        $r_imapps  = chk(get_field($row, array('imapps')));
+                        $r_xo      = chk(get_field($row, array('xo_scanpack','xo/scanpack','xo')));
+                        $r_email   = get_field($row, array('email_address','email address','emailaddress','email'));
+                        $r_admail  = get_field($row, array('ad_email','ad/email'));
 
-                        if ($emp_id === '' && $r_name === '') continue;
+                        if ($r_empid === '' && $r_name === '') continue;
 
-                        if ($emp_id === '' || $r_name === '' || $r_dept === '' || $r_position === '' || $r_hire === '' || $r_resign === '') {
+                        if ($r_empid === '' || $r_name === '' || $r_dept === '' || $r_pos === '' || $r_effdate === '') {
                             $skipped++;
-                            $errors[] = "Row $rowNum: Missing required field(s) — employee_id, name, department, position, hire_date, resign_date required.";
+                            $errors[] = "Row $rowNum: Missing required fields (employee_id, name, department, position, effective_date).";
                             continue;
                         }
 
-                        $r_hire     = normalise_date($r_hire);
-                        $r_resign   = normalise_date($r_resign);
-                        $r_clearance= normalise_date($r_clearance);
+                        $r_effdate = normalise_date($r_effdate);
+                        $r_hired   = normalise_date($r_hired);
+                        $r_clear   = normalise_date($r_clear);
 
-                        $emp_id     = mysqli_real_escape_string($conn, $emp_id);
-                        $r_name     = mysqli_real_escape_string($conn, $r_name);
-                        $r_dept     = mysqli_real_escape_string($conn, $r_dept);
-                        $r_position = mysqli_real_escape_string($conn, $r_position);
-                        $r_email    = mysqli_real_escape_string($conn, $r_email);
-                        $r_manager  = mysqli_real_escape_string($conn, $r_manager);
-                        $r_reason   = mysqli_real_escape_string($conn, $r_reason);
+                        $r_week   = mysqli_real_escape_string($conn, $r_week);
+                        $r_empid  = mysqli_real_escape_string($conn, $r_empid);
+                        $r_name   = mysqli_real_escape_string($conn, $r_name);
+                        $r_grp    = mysqli_real_escape_string($conn, $r_grp);
+                        $r_hrsumm = mysqli_real_escape_string($conn, $r_hrsumm);
+                        $r_dept   = mysqli_real_escape_string($conn, $r_dept);
+                        $r_pos    = mysqli_real_escape_string($conn, $r_pos);
 
-                        $dup = mysqli_query($conn, "SELECT id FROM res WHERE employee_id = '$emp_id'");
+                        $dup = mysqli_query($conn, "SELECT id FROM res WHERE employee_id = '$r_empid' AND effective_date = '$r_effdate'");
                         if (mysqli_num_rows($dup) > 0) {
                             $skipped++;
-                            $errors[] = "Row $rowNum: Employee ID '$emp_id' already exists - skipped.";
+                            $errors[] = "Row $rowNum: Employee ID '$r_empid' with effective date '$r_effdate' already exists - skipped.";
                             continue;
                         }
 
+                        $cd_val = ($r_clear !== '') ? "'$r_clear'" : 'NULL';
                         $sql = "INSERT INTO res
-                                (employee_id, name, department, position, email, manager, hire_date, resign_date, clearance_date, reason, wifi, goplus, imapps, xo_scanpack)
+                                (week, effective_date, employee_id, name, date_hired, grp, hr_summary, department, position, clearance_date, wifi, goplus, imapps, xo_scanpack, email_address, ad_email)
                                 VALUES
-                                ('$emp_id','$r_name','$r_dept','$r_position','$r_email','$r_manager','$r_hire','$r_resign','$r_clearance','$r_reason',$r_wifi,$r_goplus,$r_imapps,$r_xo)";
+                                ('$r_week','$r_effdate','$r_empid','$r_name','$r_hired','$r_grp','$r_hrsumm','$r_dept','$r_pos',$cd_val,$r_wifi,$r_goplus,$r_imapps,$r_xo,'$r_email','$r_admail')";
                         if (mysqli_query($conn, $sql)) {
                             $imported++;
                         } else {
@@ -245,7 +314,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $message = "Import complete: <strong>$imported</strong> record(s) added, <strong>$skipped</strong> skipped.";
                     if (!empty($errors)) {
                         $message .= "<ul style='margin-top:8px;padding-left:18px;font-size:0.82rem'>";
-                        foreach ($errors as $err) $message .= "<li>" . htmlspecialchars($err) . "</li>";
+                        foreach ($errors as $err) $message .= "<li>" . e($err) . "</li>";
                         $message .= "</ul>";
                     }
                     $messageType = ($skipped > 0) ? 'info' : 'success';
@@ -257,7 +326,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 // ─── FETCH DATA ───────────────────────────────────────────────────
 $employees = array();
-$result    = mysqli_query($conn, "SELECT * FROM res ORDER BY resign_date DESC");
+/*
+$result    = mysqli_query($conn, "SELECT * FROM res ORDER BY effective_date DESC, week DESC");
+while ($row = mysqli_fetch_assoc($result)) {
+    $employees[] = $row;
+}
+*/
+
+$result = mysqli_query($conn, "SELECT * FROM res ORDER BY effective_date DESC, week DESC");
+
+if (!$result) {
+    die("SQL Error: " . mysqli_error($conn));
+}
+
 while ($row = mysqli_fetch_assoc($result)) {
     $employees[] = $row;
 }
@@ -273,18 +354,59 @@ foreach ($employees as $emp) {
 $recent       = 0;
 $sixMonthsAgo = date('Y-m-d', strtotime('-6 months'));
 foreach ($employees as $emp) {
-    if ($emp['resign_date'] >= $sixMonthsAgo) $recent++;
+    if (isset($emp['effective_date']) && $emp['effective_date'] >= $sixMonthsAgo) $recent++;
 }
 
-$totalDays = 0;
+// Group breakdown
+$grpCounts = array();
 foreach ($employees as $emp) {
-    $hire      = new DateTime($emp['hire_date']);
-    $resign    = new DateTime($emp['resign_date']);
-    $totalDays += $hire->diff($resign)->days;
+    $g = isset($emp['grp']) && $emp['grp'] !== '' ? $emp['grp'] : 'Unassigned';
+    $grpCounts[$g] = isset($grpCounts[$g]) ? $grpCounts[$g] + 1 : 1;
 }
-$avgTenureYears = ($totalResigned > 0) ? round($totalDays / $totalResigned / 365, 1) : 0;
 
-$view = isset($_GET['view']) ? $_GET['view'] : 'dashboard';
+// ─── VIEW ROUTING ─────────────────────────────────────────────────
+$view     = isset($_GET['view']) ? $_GET['view'] : 'dashboard';
+$edit_emp = null;
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'edit') {
+    if ($messageType === 'success') {
+        $view = 'list';
+    } else {
+        $view    = 'edit';
+        $edit_id = (int)$_POST['edit_id'];
+        $er      = mysqli_query($conn, "SELECT * FROM res WHERE id = $edit_id");
+        $edit_emp = mysqli_fetch_assoc($er);
+        if ($edit_emp) {
+            $edit_emp['week']           = $_POST['week'];
+            $edit_emp['effective_date'] = $_POST['effective_date'];
+            $edit_emp['employee_id']    = $_POST['employee_id'];
+            $edit_emp['name']           = $_POST['name'];
+            $edit_emp['date_hired']     = $_POST['date_hired'];
+            $edit_emp['grp']            = $_POST['grp'];
+            $edit_emp['hr_summary']     = $_POST['hr_summary'];
+            $edit_emp['department']     = $_POST['department'];
+            $edit_emp['position']       = $_POST['position'];
+            $edit_emp['clearance_date'] = $_POST['clearance_date'];
+            $edit_emp['wifi']           = isset($_POST['wifi'])        ? 1 : 0;
+            $edit_emp['goplus']         = isset($_POST['goplus'])      ? 1 : 0;
+            $edit_emp['imapps']         = isset($_POST['imapps'])      ? 1 : 0;
+            $edit_emp['xo_scanpack']    = isset($_POST['xo_scanpack']) ? 1 : 0;
+            $edit_emp['ad_email']        = isset($_POST['ad_email']) ? $_POST['ad_email'] : '';
+            $edit_emp['email_address']   = isset($_POST['email_address']) ? $_POST['email_address'] : '';
+        }
+    }
+}
+
+if ($view === 'edit' && $edit_emp === null && isset($_GET['id'])) {
+    $edit_id  = (int)$_GET['id'];
+    $er       = mysqli_query($conn, "SELECT * FROM res WHERE id = $edit_id");
+    $edit_emp = mysqli_fetch_assoc($er);
+    if (!$edit_emp) {
+        $message     = "Record not found.";
+        $messageType = 'error';
+        $view        = 'list';
+    }
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -431,7 +553,6 @@ $view = isset($_GET['view']) ? $_GET['view'] : 'dashboard';
             top:0; left:0; right:0;
             height: 3px;
         }
-
         .stat-card.orange::before { background:var(--accent); }
         .stat-card.blue::before   { background:var(--info); }
         .stat-card.green::before  { background:var(--success); }
@@ -455,7 +576,7 @@ $view = isset($_GET['view']) ? $_GET['view'] : 'dashboard';
 
         .stat-sub { font-size:0.78rem; color:var(--muted); margin-top:6px; }
 
-        /* ── DEPT BARS ── */
+        /* ── DEPT / GROUP BARS ── */
         .dept-section {
             background: var(--card);
             border-radius: 12px;
@@ -496,7 +617,7 @@ $view = isset($_GET['view']) ? $_GET['view'] : 'dashboard';
             overflow: hidden;
         }
 
-        .table-wrapper { overflow-x: auto; }
+        .table-wrapper { overflow-x:auto; }
 
         .table-header {
             padding: 20px 24px;
@@ -525,14 +646,22 @@ $view = isset($_GET['view']) ? $_GET['view'] : 'dashboard';
             text-decoration: none;
         }
 
-        .btn-primary  { background:var(--accent); color:#fff; }
-        .btn-green    { background:#2d7a4f; color:#fff; }
-        .btn-blue     { background:var(--info); color:#fff; }
+        .btn-primary   { background:var(--accent); color:#fff; }
+        .btn-green     { background:#2d7a4f; color:#fff; }
+        .btn-blue      { background:var(--info); color:#fff; }
 
         .btn-danger {
             background: transparent;
             color: var(--accent);
             border: 1px solid #f5c3b5;
+            font-size: 0.8rem;
+            padding: 6px 12px;
+        }
+
+        .btn-edit {
+            background: transparent;
+            color: var(--info);
+            border: 1px solid #b8d0ef;
             font-size: 0.8rem;
             padding: 6px 12px;
         }
@@ -546,7 +675,7 @@ $view = isset($_GET['view']) ? $_GET['view'] : 'dashboard';
         table { width:100%; border-collapse:collapse; font-size:0.82rem; }
 
         thead th {
-            padding: 11px 14px;
+            padding: 11px 12px;
             text-align: left;
             background: #faf8f5;
             font-size: 0.72rem;
@@ -559,7 +688,7 @@ $view = isset($_GET['view']) ? $_GET['view'] : 'dashboard';
         }
 
         tbody td {
-            padding: 12px 14px;
+            padding: 11px 12px;
             border-bottom: 1px solid var(--border);
             vertical-align: middle;
         }
@@ -568,7 +697,7 @@ $view = isset($_GET['view']) ? $_GET['view'] : 'dashboard';
         tbody tr:hover td { background:#faf8f5; }
 
         .emp-name  { font-weight:600; font-size:0.875rem; }
-        .emp-email { font-size:0.75rem; color:var(--muted); margin-top:2px; }
+        .emp-sub   { font-size:0.75rem; color:var(--muted); margin-top:2px; }
 
         .emp-id-badge {
             display: inline-block;
@@ -582,36 +711,37 @@ $view = isset($_GET['view']) ? $_GET['view'] : 'dashboard';
             letter-spacing: 0.04em;
         }
 
+        .week-badge {
+            display: inline-block;
+            background: #e8f0fb;
+            color: var(--info);
+            font-size: 0.7rem;
+            font-weight: 700;
+            padding: 2px 8px;
+            border-radius: 4px;
+            letter-spacing: 0.04em;
+        }
+
+        .grp-badge {
+            display: inline-block;
+            background: #f3eeff;
+            color: #5c35b5;
+            font-size: 0.7rem;
+            font-weight: 600;
+            padding: 2px 8px;
+            border-radius: 4px;
+        }
+
         .badge { display:inline-block; padding:3px 10px; border-radius:99px; font-size:0.72rem; font-weight:600; }
         .badge-resigned { background:#fdf0ee; color:var(--accent); }
 
-        /* ── TICK ── */
-        .tick {
-            display: inline-block;
-            font-size: 0.9rem;
-            font-weight: 700;
-            width: 22px;
-            text-align: center;
-        }
-        .tick-yes { color: var(--success); }
-        .tick-no  { color: #ccc; }
+        .tick { display:inline-block; font-size:0.9rem; font-weight:700; width:22px; text-align:center; }
+        .tick-yes { color:var(--success); }
+        .tick-no  { color:#ccc; }
 
-        /* ── CLEARANCE ROW ── */
-        .clearance-chips {
-            display: -webkit-box;
-            display: flex;
-            gap: 4px;
-            flex-wrap: wrap;
-        }
-        .chip {
-            font-size: 0.65rem;
-            font-weight: 700;
-            padding: 2px 6px;
-            border-radius: 4px;
-            letter-spacing: 0.03em;
-        }
-        .chip-done   { background:#d4edda; color:#155724; }
-        .chip-undone { background:#f0ece4; color:#aaa; text-decoration:line-through; }
+        .ad-badge { display:inline-block; font-size:0.7rem; font-weight:700; padding:2px 8px; border-radius:4px; }
+        .ad-active   { background:#d4edda; color:#155724; }
+        .ad-disabled { background:#fdf0ee; color:#c1440e; }
 
         /* ── FORM ── */
         .form-card {
@@ -651,7 +781,8 @@ $view = isset($_GET['view']) ? $_GET['view'] : 'dashboard';
 
         label { font-size:0.8rem; font-weight:600; }
 
-        input[type=text], input[type=email], input[type=date], select, textarea {
+        input[type=text], input[type=email], input[type=date],
+        input[type=number], select, textarea {
             padding: 10px 13px;
             border: 1.5px solid var(--border);
             border-radius: 7px;
@@ -663,22 +794,21 @@ $view = isset($_GET['view']) ? $_GET['view'] : 'dashboard';
             width: 100%;
         }
 
-        input[type=text]:focus, input[type=email]:focus,
-        input[type=date]:focus, select:focus, textarea:focus {
+        input[type=text]:focus, input[type=date]:focus,
+        input[type=number]:focus, select:focus, textarea:focus {
             border-color: var(--accent);
             background: #fff;
         }
 
         textarea { resize:vertical; min-height:80px; }
 
-        /* ── CHECKBOX GROUP ── */
+        /* ── CHECKBOXES ── */
         .checkbox-group {
             display: -webkit-box;
             display: flex;
             flex-wrap: wrap;
             gap: 10px;
             padding: 4px 0;
-            width: 100%;
         }
 
         .checkbox-item {
@@ -694,8 +824,6 @@ $view = isset($_GET['view']) ? $_GET['view'] : 'dashboard';
             cursor: pointer;
             font-size: 0.85rem;
             font-weight: 600;
-            -webkit-user-select: none;
-            user-select: none;
         }
 
         .checkbox-item input[type=checkbox] {
@@ -709,8 +837,6 @@ $view = isset($_GET['view']) ? $_GET['view'] : 'dashboard';
         }
 
         .checkbox-item:hover { border-color:var(--accent); background:#fff; }
-
-        .checkbox-item input[type=checkbox]:checked + span { color: var(--success); }
 
         .form-actions { margin-top:24px; display:-webkit-box; display:flex; gap:12px; }
 
@@ -784,6 +910,8 @@ $view = isset($_GET['view']) ? $_GET['view'] : 'dashboard';
         .empty { text-align:center; padding:60px 20px; color:var(--muted); }
         .empty-icon { font-size:3rem; margin-bottom:12px; opacity:0.4; }
         .empty p { font-size:0.9rem; }
+
+        .action-cell { display:-webkit-box; display:flex; gap:6px; align-items:center; }
     </style>
 </head>
 <body>
@@ -822,7 +950,7 @@ $view = isset($_GET['view']) ? $_GET['view'] : 'dashboard';
         <?php endif; ?>
 
         <?php if ($view === 'dashboard'): ?>
-        <!-- ═══════════ DASHBOARD ═══════════════════════════════ -->
+        <!-- ═══════ DASHBOARD ══════════════════════════════════════ -->
         <div class="page-header">
             <h2>Dashboard</h2>
             <p>Overview of resigned employee records</p>
@@ -837,17 +965,17 @@ $view = isset($_GET['view']) ? $_GET['view'] : 'dashboard';
             <div class="stat-card blue">
                 <div class="stat-label">Recent (6 mo.)</div>
                 <div class="stat-value"><?php echo $recent; ?></div>
-                <div class="stat-sub">Last 6 months</div>
+                <div class="stat-sub">By effective date</div>
             </div>
             <div class="stat-card green">
-                <div class="stat-label">Avg. Tenure</div>
-                <div class="stat-value"><?php echo $avgTenureYears; ?>y</div>
-                <div class="stat-sub">Years of service</div>
-            </div>
-            <div class="stat-card purple">
                 <div class="stat-label">Departments</div>
                 <div class="stat-value"><?php echo count($deptCounts); ?></div>
                 <div class="stat-sub">Affected departments</div>
+            </div>
+            <div class="stat-card purple">
+                <div class="stat-label">Groups</div>
+                <div class="stat-value"><?php echo count($grpCounts); ?></div>
+                <div class="stat-sub">Affected groups</div>
             </div>
         </div>
 
@@ -857,7 +985,7 @@ $view = isset($_GET['view']) ? $_GET['view'] : 'dashboard';
             <?php foreach ($deptCounts as $dept => $count): ?>
             <div class="dept-bar-row">
                 <div class="dept-bar-label">
-                    <span><?php echo htmlspecialchars($dept); ?></span>
+                    <span><?php echo e($dept); ?></span>
                     <span><?php echo $count; ?> employee<?php echo ($count > 1) ? 's' : ''; ?></span>
                 </div>
                 <div class="dept-bar-track">
@@ -884,27 +1012,29 @@ $view = isset($_GET['view']) ? $_GET['view'] : 'dashboard';
             <table>
                 <thead>
                     <tr>
+                        <th>Week</th>
+                        <th>Effective Date</th>
                         <th>Employee ID</th>
                         <th>Name</th>
+                        <th>Group</th>
                         <th>Department</th>
                         <th>Position</th>
-                        <th>Resign Date</th>
-                        <th>Clearance</th>
                         <th>Status</th>
                     </tr>
                 </thead>
                 <tbody>
                     <?php foreach ($recent_emps as $emp): ?>
                     <tr>
-                        <td><span class="emp-id-badge"><?php echo htmlspecialchars(isset($emp['employee_id']) ? $emp['employee_id'] : '-'); ?></span></td>
+                        <td><span class="week-badge"><?php echo e(isset($emp['week']) ? $emp['week'] : '-'); ?></span></td>
+                        <td><?php echo e(isset($emp['effective_date']) ? $emp['effective_date'] : '-'); ?></td>
+                        <td><span class="emp-id-badge"><?php echo e(isset($emp['employee_id']) ? $emp['employee_id'] : '-'); ?></span></td>
                         <td>
-                            <div class="emp-name"><?php echo htmlspecialchars($emp['name']); ?></div>
-                            <div class="emp-email"><?php echo htmlspecialchars($emp['email']); ?></div>
+                            <div class="emp-name"><?php echo e($emp['name']); ?></div>
+                            <div class="emp-sub"><?php echo e(isset($emp['hr_summary']) ? $emp['hr_summary'] : ''); ?></div>
                         </td>
-                        <td><?php echo htmlspecialchars($emp['department']); ?></td>
-                        <td><?php echo htmlspecialchars($emp['position']); ?></td>
-                        <td><?php echo htmlspecialchars($emp['resign_date']); ?></td>
-                        <td><?php echo htmlspecialchars(isset($emp['clearance_date']) ? $emp['clearance_date'] : '-'); ?></td>
+                        <td><?php echo isset($emp['grp']) && $emp['grp'] !== '' ? '<span class="grp-badge">' . e($emp['grp']) . '</span>' : '-'; ?></td>
+                        <td><?php echo e($emp['department']); ?></td>
+                        <td><?php echo e($emp['position']); ?></td>
                         <td><span class="badge badge-resigned">Resigned</span></td>
                     </tr>
                     <?php endforeach; ?>
@@ -915,7 +1045,7 @@ $view = isset($_GET['view']) ? $_GET['view'] : 'dashboard';
         </div>
 
         <?php elseif ($view === 'list'): ?>
-        <!-- ═══════════ ALL RECORDS ═════════════════════════════ -->
+        <!-- ═══════ ALL RECORDS ════════════════════════════════════ -->
         <div class="page-header">
             <h2>All Records</h2>
             <p><?php echo $totalResigned; ?> resigned employee<?php echo ($totalResigned !== 1) ? 's' : ''; ?> in database</p>
@@ -927,66 +1057,79 @@ $view = isset($_GET['view']) ? $_GET['view'] : 'dashboard';
                 <div class="table-header-actions">
                     <a href="?download=csv" class="btn btn-blue">&#8595; Download CSV</a>
                     <a href="?view=import"  class="btn btn-green">&#8679; Import CSV</a>
-                    <a href="?view=add"     class="btn btn-primary">&#43; Add Employee</a>
+                    <a href="?view=add"     class="btn btn-primary">&#43; Add Record</a>
                 </div>
             </div>
             <?php if (empty($employees)): ?>
             <div class="empty">
                 <div class="empty-icon">&#128203;</div>
-                <p>No resigned employees on file. <a href="?view=add">Add one now.</a></p>
+                <p>No records yet. <a href="?view=add">Add one now.</a></p>
             </div>
             <?php else: ?>
             <div class="table-wrapper">
             <table>
                 <thead>
                     <tr>
-                        <th>Emp ID</th>
+                        <th>Week</th>
+                        <th>Effective Date</th>
+                        <th>Employee ID</th>
                         <th>Name</th>
-                        <th>Dept</th>
+                        <th>Date Hired</th>
+                        <th>Group</th>
+                        <th>HR Summary</th>
+                        <th>Department</th>
                         <th>Position</th>
-                        <th>Manager</th>
-                        <th>Hired</th>
-                        <th>Resigned</th>
                         <th>Clearance</th>
                         <th>WiFi</th>
                         <th>GO+</th>
                         <th>IMAPPS</th>
-                        <th>XO/SCANPACK</th>
-                        <th>Reason</th>
+                        <th>XO/SCAN</th>
+                        <th>Email Address</th>
+                        <th>AD/Email</th>
                         <th>Action</th>
                     </tr>
                 </thead>
                 <tbody>
                     <?php foreach ($employees as $emp): ?>
                     <?php
-                        $wifi_val   = isset($emp['wifi'])       ? (int)$emp['wifi']       : 0;
-                        $goplus_val = isset($emp['goplus'])     ? (int)$emp['goplus']     : 0;
-                        $imapps_val = isset($emp['imapps'])     ? (int)$emp['imapps']     : 0;
-                        $xo_val     = isset($emp['xo_scanpack'])? (int)$emp['xo_scanpack']: 0;
+                        $wifi_val = isset($emp['wifi'])        ? (int)$emp['wifi']        : 0;
+                        $gop_val  = isset($emp['goplus'])      ? (int)$emp['goplus']      : 0;
+                        $ima_val  = isset($emp['imapps'])      ? (int)$emp['imapps']      : 0;
+                        $xo_val   = isset($emp['xo_scanpack']) ? (int)$emp['xo_scanpack'] : 0;
                     ?>
                     <tr>
-                        <td><span class="emp-id-badge"><?php echo htmlspecialchars(isset($emp['employee_id']) ? $emp['employee_id'] : '-'); ?></span></td>
+                        <td><span class="week-badge"><?php echo e(isset($emp['week']) ? $emp['week'] : '-'); ?></span></td>
+                        <td style="white-space:nowrap"><?php echo e(isset($emp['effective_date']) ? $emp['effective_date'] : '-'); ?></td>
+                        <td><span class="emp-id-badge"><?php echo e(isset($emp['employee_id']) ? $emp['employee_id'] : '-'); ?></span></td>
                         <td>
-                            <div class="emp-name"><?php echo htmlspecialchars($emp['name']); ?></div>
-                            <div class="emp-email"><?php echo htmlspecialchars($emp['email']); ?></div>
+                            <div class="emp-name"><?php echo e($emp['name']); ?></div>
                         </td>
-                        <td><?php echo htmlspecialchars($emp['department']); ?></td>
-                        <td><?php echo htmlspecialchars($emp['position']); ?></td>
-                        <td style="font-size:0.8rem"><?php echo htmlspecialchars(isset($emp['manager']) ? $emp['manager'] : '-'); ?></td>
-                        <td style="white-space:nowrap"><?php echo htmlspecialchars($emp['hire_date']); ?></td>
-                        <td style="white-space:nowrap"><?php echo htmlspecialchars($emp['resign_date']); ?></td>
-                        <td style="white-space:nowrap"><?php echo htmlspecialchars(isset($emp['clearance_date']) ? $emp['clearance_date'] : '-'); ?></td>
+                        <td style="white-space:nowrap;font-size:0.8rem"><?php echo e(isset($emp['date_hired']) ? $emp['date_hired'] : '-'); ?></td>
+                        <td><?php echo isset($emp['grp']) && $emp['grp'] !== '' ? '<span class="grp-badge">' . e($emp['grp']) . '</span>' : '-'; ?></td>
+                        <td style="max-width:130px;font-size:0.78rem;color:#666"><?php echo e(isset($emp['hr_summary']) ? $emp['hr_summary'] : ''); ?></td>
+                        <td><?php echo e($emp['department']); ?></td>
+                        <td><?php echo e($emp['position']); ?></td>
+                        <td style="white-space:nowrap;font-size:0.8rem"><?php echo e(isset($emp['clearance_date']) && $emp['clearance_date'] ? $emp['clearance_date'] : '-'); ?></td>
                         <td style="text-align:center"><?php echo tick($wifi_val); ?></td>
-                        <td style="text-align:center"><?php echo tick($goplus_val); ?></td>
-                        <td style="text-align:center"><?php echo tick($imapps_val); ?></td>
+                        <td style="text-align:center"><?php echo tick($gop_val); ?></td>
+                        <td style="text-align:center"><?php echo tick($ima_val); ?></td>
                         <td style="text-align:center"><?php echo tick($xo_val); ?></td>
-                        <td style="max-width:140px;font-size:0.78rem;color:#888"><?php echo htmlspecialchars($emp['reason']); ?></td>
+                        <td style="font-size:0.78rem"><?php echo e(isset($emp['email_address']) ? $emp['email_address'] : ''); ?></td>
+                        <td><?php
+                            $adv = isset($emp['ad_email']) ? $emp['ad_email'] : '';
+                            if ($adv === 'Active')   echo '<span class="ad-badge ad-active">Active</span>';
+                            elseif ($adv === 'Disabled') echo '<span class="ad-badge ad-disabled">Disabled</span>';
+                            else echo '<span style="color:#ccc">&#8212;</span>';
+                        ?></td>
                         <td>
-                            <form method="POST" onsubmit="return confirm('Remove this record?')">
-                                <input type="hidden" name="action"    value="delete">
-                                <input type="hidden" name="delete_id" value="<?php echo $emp['id']; ?>">
-                                <button type="submit" class="btn btn-danger">Remove</button>
-                            </form>
+                            <div class="action-cell">
+                                <a href="?view=edit&id=<?php echo $emp['id']; ?>" class="btn btn-edit">&#9998; Edit</a>
+                                <form method="POST" onsubmit="return confirm('Remove this record?')">
+                                    <input type="hidden" name="action"    value="delete">
+                                    <input type="hidden" name="delete_id" value="<?php echo $emp['id']; ?>">
+                                    <button type="submit" class="btn btn-danger">Remove</button>
+                                </form>
+                            </div>
                         </td>
                     </tr>
                     <?php endforeach; ?>
@@ -996,119 +1139,149 @@ $view = isset($_GET['view']) ? $_GET['view'] : 'dashboard';
             <?php endif; ?>
         </div>
 
-        <?php elseif ($view === 'add'): ?>
-        <!-- ═══════════ ADD RECORD ══════════════════════════════ -->
+        <?php elseif ($view === 'add' || ($view === 'edit' && $edit_emp)): ?>
+        <!-- ═══════ ADD / EDIT RECORD ══════════════════════════════ -->
+        <?php
+            $is_edit  = ($view === 'edit');
+            $f_week   = $is_edit ? e($edit_emp['week'])                                          : '';
+            $f_effdt  = $is_edit ? e(isset($edit_emp['effective_date']) ? $edit_emp['effective_date'] : '') : '';
+            $f_empid  = $is_edit ? e($edit_emp['employee_id'])                                   : '';
+            $f_name   = $is_edit ? e($edit_emp['name'])                                          : '';
+            $f_hired  = $is_edit ? e(isset($edit_emp['date_hired'])     ? $edit_emp['date_hired']     : '') : '';
+            $f_grp    = $is_edit ? e(isset($edit_emp['grp'])            ? $edit_emp['grp']            : '') : '';
+            $f_hrsumm = $is_edit ? e(isset($edit_emp['hr_summary'])     ? $edit_emp['hr_summary']     : '') : '';
+            $f_dept   = $is_edit ? $edit_emp['department']                                       : '';
+            $f_pos    = $is_edit ? e($edit_emp['position'])                                      : '';
+            $f_clear  = $is_edit ? e(isset($edit_emp['clearance_date']) ? $edit_emp['clearance_date'] : '') : '';
+            $f_wifi   = $is_edit ? (int)$edit_emp['wifi']        : 0;
+            $f_gop    = $is_edit ? (int)$edit_emp['goplus']      : 0;
+            $f_ima    = $is_edit ? (int)$edit_emp['imapps']      : 0;
+            $f_xo     = $is_edit ? (int)$edit_emp['xo_scanpack'] : 0;
+            $f_admail = $is_edit ? e(isset($edit_emp['ad_email']) ? $edit_emp['ad_email'] : '') : '';
+            $f_email  = $is_edit ? e(isset($edit_emp['email_address']) ? $edit_emp['email_address'] : '') : '';
+        ?>
         <div class="page-header">
-            <h2>Add Resigned Employee</h2>
-            <p>Record will be saved to database</p>
+            <h2><?php echo $is_edit ? 'Edit Record' : 'Add Resigned Employee'; ?></h2>
+            <p><?php echo $is_edit ? 'Updating record for <strong>' . e($edit_emp['name']) . '</strong>' : 'Record will be saved to table <strong>res</strong>'; ?></p>
         </div>
 
         <div class="form-card">
             <form method="POST">
-                <input type="hidden" name="action" value="add">
+                <input type="hidden" name="action" value="<?php echo $is_edit ? 'edit' : 'add'; ?>">
+                <?php if ($is_edit): ?>
+                <input type="hidden" name="edit_id" value="<?php echo $edit_emp['id']; ?>">
+                <?php endif; ?>
+
                 <div class="form-grid">
 
-                    <!-- Employee Info -->
+                    <div class="form-section-label">Resignation Info</div>
+
+                    <div class="form-group third">
+                        <label for="week">Week</label>
+                        <input type="text" id="week" name="week" placeholder="e.g. Week 1" value="<?php echo $f_week; ?>">
+                    </div>
+                    <div class="form-group third">
+                        <label for="effective_date">Effective Date *</label>
+                        <input type="date" id="effective_date" name="effective_date" required value="<?php echo $f_effdt; ?>">
+                    </div>
+                    <div class="form-group third">
+                        <label for="hr_summary">HR Summary</label>
+                        <input type="text" id="hr_summary" name="hr_summary" placeholder="e.g. Resigned" value="<?php echo $f_hrsumm; ?>">
+                    </div>
+
                     <div class="form-section-label">Employee Information</div>
 
                     <div class="form-group">
                         <label for="employee_id">Employee ID *</label>
-                        <input type="text" id="employee_id" name="employee_id" required placeholder="e.g. EMP-00123">
+                        <input type="text" id="employee_id" name="employee_id" required placeholder="e.g. EMP-00123" value="<?php echo $f_empid; ?>">
                     </div>
                     <div class="form-group">
                         <label for="name">Full Name *</label>
-                        <input type="text" id="name" name="name" required placeholder="e.g. Maria Santos">
+                        <input type="text" id="name" name="name" required placeholder="e.g. Maria Santos" value="<?php echo $f_name; ?>">
                     </div>
                     <div class="form-group">
-                        <label for="email">Email Address *</label>
-                        <input type="email" id="email" name="email" required placeholder="maria@company.com">
+                        <label for="date_hired">Date Hired</label>
+                        <input type="date" id="date_hired" name="date_hired" value="<?php echo $f_hired; ?>">
                     </div>
                     <div class="form-group">
-                        <label for="manager">Direct Manager</label>
-                        <input type="text" id="manager" name="manager" placeholder="e.g. Juan dela Cruz">
+                        <label for="grp">Group</label>
+                        <input type="text" id="grp" name="grp" placeholder="e.g. Production" value="<?php echo $f_grp; ?>">
                     </div>
                     <div class="form-group">
                         <label for="department">Department *</label>
                         <select id="department" name="department" required>
                             <option value="">Select department...</option>
-                            <option>Engineering</option>
-                            <option>Marketing</option>
-                            <option>HR</option>
-                            <option>Finance</option>
-                            <option>Operations</option>
-                            <option>Sales</option>
-                            <option>IT</option>
-                            <option>Legal</option>
-                            <option>Other</option>
+                            <?php
+                            $depts = array('Engineering','Marketing','HR','Finance','Operations','Sales','IT','Legal','Production','Warehouse','Quality','Admin','Other');
+                            foreach ($depts as $d) {
+                                $sel = ($f_dept === $d) ? ' selected' : '';
+                                echo '<option value="' . e($d) . '"' . $sel . '>' . e($d) . '</option>';
+                            }
+                            ?>
                         </select>
                     </div>
                     <div class="form-group">
                         <label for="position">Position / Job Title *</label>
-                        <input type="text" id="position" name="position" required placeholder="e.g. Senior Developer">
+                        <input type="text" id="position" name="position" required placeholder="e.g. Senior Developer" value="<?php echo $f_pos; ?>">
                     </div>
 
-                    <!-- Dates -->
-                    <div class="form-section-label">Dates</div>
+                    <div class="form-section-label">Clearance</div>
 
                     <div class="form-group">
-                        <label for="hire_date">Hire Date *</label>
-                        <input type="date" id="hire_date" name="hire_date" required>
-                    </div>
-                    <div class="form-group">
-                        <label for="resign_date">Resignation Date *</label>
-                        <input type="date" id="resign_date" name="resign_date" required>
-                    </div>
-                    <div class="form-group">
-                        <label for="clearance_date">Clearance Date *</label>
-                        <input type="date" id="clearance_date" name="clearance_date">
+                        <label for="clearance_date">Clearance Date</label>
+                        <input type="date" id="clearance_date" name="clearance_date" value="<?php echo $f_clear; ?>">
                     </div>
                     <div class="form-group">
                         <!-- spacer -->
                     </div>
 
-                    <!-- Account Clearance -->
-                    <div class="form-section-label">Account Clearance</div>
-
                     <div class="form-group full">
                         <label>Accounts Cleared</label>
                         <div class="checkbox-group">
                             <label class="checkbox-item">
-                                <input type="checkbox" name="wifi" value="1">
+                                <input type="checkbox" name="wifi" value="1" <?php echo $f_wifi ? 'checked' : ''; ?>>
                                 <span>WiFi</span>
                             </label>
                             <label class="checkbox-item">
-                                <input type="checkbox" name="goplus" value="1">
+                                <input type="checkbox" name="goplus" value="1" <?php echo $f_gop ? 'checked' : ''; ?>>
                                 <span>GO+</span>
                             </label>
                             <label class="checkbox-item">
-                                <input type="checkbox" name="imapps" value="1">
+                                <input type="checkbox" name="imapps" value="1" <?php echo $f_ima ? 'checked' : ''; ?>>
                                 <span>IMAPPS</span>
                             </label>
                             <label class="checkbox-item">
-                                <input type="checkbox" name="xo_scanpack" value="1">
+                                <input type="checkbox" name="xo_scanpack" value="1" <?php echo $f_xo ? 'checked' : ''; ?>>
                                 <span>XO/SCANPACK</span>
                             </label>
                         </div>
                     </div>
 
-                    <!-- Reason -->
-                    <div class="form-section-label">Resignation Details</div>
-
-                    <div class="form-group full">
-                        <label for="reason">Reason for Resignation</label>
-                        <textarea id="reason" name="reason" placeholder="e.g. Career advancement, personal reasons, relocation..."></textarea>
+                    <div class="form-group">
+                        <label for="email_address">Email Address</label>
+                        <input type="email" id="email_address" name="email_address" placeholder="e.g. maria@company.com" value="<?php echo $f_email; ?>">
+                    </div>
+                    <div class="form-group">
+                        <label for="ad_email">AD/Email</label>
+                        <select id="ad_email" name="ad_email">
+                            <option value="">-- Null --</option>
+                            <option value="Active" <?php echo ($f_admail === 'Active') ? 'selected' : ''; ?>>Active</option>
+                            <option value="Disabled" <?php echo ($f_admail === 'Disabled') ? 'selected' : ''; ?>>Disabled</option>
+                        </select>
                     </div>
 
                 </div>
                 <div class="form-actions">
-                    <button type="submit" class="btn btn-primary">Save to Database</button>
+                    <button type="submit" class="btn btn-primary">
+                        <?php echo $is_edit ? '&#10003; Save Changes' : 'Save to Database'; ?>
+                    </button>
                     <a href="?view=list" class="btn btn-secondary">Cancel</a>
                 </div>
             </form>
         </div>
 
         <?php elseif ($view === 'import'): ?>
-        <!-- ═══════════ IMPORT CSV ══════════════════════════════ -->
+        <!-- ═══════ IMPORT CSV ═════════════════════════════════════ -->
         <div class="page-header">
             <h2>Import CSV</h2>
             <p>Upload a <strong>.csv</strong> file to mass-import resigned employee records</p>
@@ -1129,24 +1302,27 @@ $view = isset($_GET['view']) ? $_GET['view'] : 'dashboard';
 
                 <div class="info-box">
                     <strong>&#128274; Required column headers (first row of your CSV):</strong>
-                    <span class="col-pill">employee_id</span>
-                    <span class="col-pill">name</span>
-                    <span class="col-pill">department</span>
-                    <span class="col-pill">position</span>
-                    <span class="col-pill">hire_date</span>
-                    <span class="col-pill">resign_date</span>
-                    <span class="col-pill optional">email</span>
-                    <span class="col-pill optional">manager</span>
-                    <span class="col-pill optional">clearance_date</span>
-                    <span class="col-pill optional">reason</span>
-                    <span class="col-pill optional">wifi</span>
-                    <span class="col-pill optional">goplus</span>
-                    <span class="col-pill optional">imapps</span>
-                    <span class="col-pill optional">xo_scanpack</span>
+                    <span class="col-pill">Week</span>
+                    <span class="col-pill">Effective Date</span>
+                    <span class="col-pill">Employee ID</span>
+                    <span class="col-pill">Name</span>
+                    <span class="col-pill">Hire Date</span>
+                    <span class="col-pill">Group</span>
+                    <span class="col-pill">HR Summary</span>
+                    <span class="col-pill">Department</span>
+                    <span class="col-pill">Position</span>
+                    <span class="col-pill optional">Clearance Date</span>
+                    <span class="col-pill optional">Wifi</span>
+                    <span class="col-pill optional">GoPlus</span>
+                    <span class="col-pill optional">Imapps</span>
+                    <span class="col-pill optional">XO/Scanpack</span>
+                    <span class="col-pill optional">Email Address</span>
+                    <span class="col-pill optional">AD/Email</span>
                     <p style="margin-top:10px;font-size:0.8rem;">
                         Grey pills are optional. Dates: <strong>YYYY-MM-DD</strong> or <strong>MM/DD/YYYY</strong>.
-                        For checkbox columns use <strong>1</strong> or <strong>Yes</strong> to mark as cleared.
-                        Duplicate employee IDs are skipped automatically.<br><br>
+                        Checkbox columns: use <strong>1</strong> or <strong>Yes</strong> to mark as cleared.
+                        Required columns: <strong>Week, Effective Date, Employee ID, Name, Hire Date, Group, HR Summary, Department, Position</strong>. All others are optional.<br>
+                        Duplicate employee_id + effective_date combinations are skipped automatically.<br><br>
                         <strong>To export from Excel:</strong> File &gt; Save As &gt; CSV (Comma delimited) (.csv)
                     </p>
                 </div>
