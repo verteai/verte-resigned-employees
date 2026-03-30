@@ -4,7 +4,7 @@ $db_host = '172.16.29.45';
 $db_user = 'DB_Admin';
 $db_pass = 'luthasdbsrv@2022';
 $db_name = 'resigned_emp';
-/*test*/
+/* TEST */
 $conn = mysqli_connect($db_host, $db_user, $db_pass, $db_name);
 
 if (!$conn) {
