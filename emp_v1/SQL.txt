@@ -1,39 +1,80 @@
 -- ================================================================
 -- Resigned Employee Registry
--- Database Setup Script
+-- Database Setup Script — Updated Schema
 -- Run this in phpMyAdmin > SQL tab
 -- ================================================================
- 
+
 -- 1. Create the database
 CREATE DATABASE IF NOT EXISTS `resigned_emp`
   DEFAULT CHARACTER SET utf8
   DEFAULT COLLATE utf8_general_ci;
- 
+
 USE `resigned_emp`;
- 
--- 2. Drop table if it already exists (clean slate)
+
+-- 2. Drop existing table (clean install)
+--    SKIP THIS LINE if you want to keep existing data and use the ALTER below instead
 DROP TABLE IF EXISTS `res`;
- 
--- 3. Create the main table
+
+-- 3. Create table with new field structure
 CREATE TABLE `res` (
   `id`             INT(11)       NOT NULL AUTO_INCREMENT,
+  `week`           VARCHAR(50)   NOT NULL DEFAULT '',
+  `effective_date` DATE          NOT NULL,
   `employee_id`    VARCHAR(50)   NOT NULL,
   `name`           VARCHAR(150)  NOT NULL,
-  `email`          VARCHAR(150)  NOT NULL DEFAULT '',
+  `date_hired`     DATE          NULL DEFAULT NULL,
+  `grp`            VARCHAR(100)  NOT NULL DEFAULT '',
+  `hr_summary`     VARCHAR(200)  NOT NULL DEFAULT '',
   `department`     VARCHAR(100)  NOT NULL,
   `position`       VARCHAR(100)  NOT NULL,
-  `manager`        VARCHAR(100)  NOT NULL DEFAULT '',
-  `hire_date`      DATE          NOT NULL,
-  `resign_date`    DATE          NOT NULL,
   `clearance_date` DATE          NULL DEFAULT NULL,
-  `reason`         TEXT,
   `wifi`           TINYINT(1)    NOT NULL DEFAULT 0,
   `goplus`         TINYINT(1)    NOT NULL DEFAULT 0,
   `imapps`         TINYINT(1)    NOT NULL DEFAULT 0,
   `xo_scanpack`    TINYINT(1)    NOT NULL DEFAULT 0,
+  `email_address`  VARCHAR(150)  NOT NULL DEFAULT '',
+  `ad_email`       ENUM('','Active','Disabled') NOT NULL DEFAULT '',
   `created_at`     TIMESTAMP     NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
-  UNIQUE KEY `uq_employee_id` (`employee_id`),
-  KEY `idx_resign_date`   (`resign_date`),
-  KEY `idx_department`    (`department`)
+  KEY `idx_effective_date` (`effective_date`),
+  KEY `idx_employee_id`    (`employee_id`),
+  KEY `idx_department`     (`department`),
+  KEY `idx_week`           (`week`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8;
+
+-- ================================================================
+-- OPTIONAL: Sample data — remove before going to production
+-- ================================================================
+
+INSERT INTO `res`
+  (`week`, `effective_date`, `employee_id`, `name`, `date_hired`, `grp`, `hr_summary`, `department`, `position`, `clearance_date`, `wifi`, `goplus`, `imapps`, `xo_scanpack`, `email_address`, `ad_email`)
+VALUES
+  ('Week 1', '2025-01-06', 'EMP-00001', 'Maria Santos',   '2019-03-10', 'Group A', 'Resigned',          'IT',          'Systems Analyst',      '2025-01-10', 1, 1, 1, 1, 'maria.santos@company.com', 'Disabled'),
+  ('Week 1', '2025-01-06', 'EMP-00002', 'Juan dela Cruz', '2020-06-01', 'Group B', 'Resigned',          'Operations',  'Warehouse Supervisor', '2025-01-09', 1, 0, 1, 1, 'juan.delacruz@company.com', 'Disabled'),
+  ('Week 2', '2025-01-13', 'EMP-00003', 'Ana Lim',        '2018-01-15', 'Group A', 'AWOL',              'HR',          'HR Officer',           NULL,         0, 0, 0, 0, 'ana.lim@company.com', ''),
+  ('Week 2', '2025-01-13', 'EMP-00004', 'Pedro Garcia',   '2021-08-20', 'Group C', 'End of Contract',   'Finance',     'Accounting Clerk',     '2025-01-15', 1, 1, 0, 0, 'pedro.garcia@company.com', 'Active'),
+  ('Week 3', '2025-01-20', 'EMP-00005', 'Rosa Manalo',    '2017-05-05', 'Group B', 'Resigned',          'Marketing',   'Marketing Specialist', '2025-01-22', 1, 1, 1, 0, 'rosa.manalo@company.com', 'Disabled');
+
+-- ================================================================
+-- UPGRADE SCRIPT: Already have a `res` table from the old version?
+-- Comment out DROP TABLE and CREATE TABLE above, then run this instead.
+-- Note: MySQL 5.0 (XAMPP 1.7.2) does NOT support ADD COLUMN IF NOT EXISTS
+--       so check your columns first in phpMyAdmin before running.
+-- ================================================================
+
+/*
+ALTER TABLE `res`
+  ADD COLUMN `week`           VARCHAR(50)  NOT NULL DEFAULT '' AFTER `id`,
+  ADD COLUMN `effective_date` DATE         NOT NULL              AFTER `week`,
+  ADD COLUMN `date_hired`     DATE         NULL DEFAULT NULL     AFTER `name`,
+  ADD COLUMN `grp`            VARCHAR(100) NOT NULL DEFAULT ''   AFTER `date_hired`,
+  ADD COLUMN `hr_summary`     VARCHAR(200) NOT NULL DEFAULT ''   AFTER `grp`,
+  ADD COLUMN `clearance_date` DATE         NULL DEFAULT NULL     AFTER `position`,
+  ADD COLUMN `wifi`           TINYINT(1)   NOT NULL DEFAULT 0,
+  ADD COLUMN `goplus`         TINYINT(1)   NOT NULL DEFAULT 0,
+  ADD COLUMN `imapps`         TINYINT(1)   NOT NULL DEFAULT 0,
+  ADD COLUMN `xo_scanpack`    TINYINT(1)   NOT NULL DEFAULT 0,
+  ADD COLUMN `email_address`  VARCHAR(150) NOT NULL DEFAULT '' AFTER `xo_scanpack`,
+  ADD COLUMN `ad_email`       ENUM('','Active','Disabled') NOT NULL DEFAULT '',
+  ADD COLUMN `created_at`     TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP;
+*/
