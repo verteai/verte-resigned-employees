@@ -21,13 +21,27 @@ mysqli_set_charset($conn, 'utf8');
 function normalise_date($val) {
     $val = trim($val);
     if ($val === '') return '';
+    // Excel serial date number
     if (is_numeric($val)) {
         $unix = ($val - 25569) * 86400;
         return date('Y-m-d', $unix);
     }
+    // MM/DD/YYYY format (Excel default) — handle explicitly
+    if (preg_match('/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/', $val, $m)) {
+        return sprintf('%04d-%02d-%02d', $m[3], $m[1], $m[2]);
+    }
+    // DD-MM-YYYY
+    if (preg_match('/^(\d{1,2})-(\d{1,2})-(\d{4})$/', $val, $m)) {
+        return sprintf('%04d-%02d-%02d', $m[3], $m[2], $m[1]);
+    }
+    // Already YYYY-MM-DD
+    if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $val)) {
+        return $val;
+    }
+    // Fallback
     $ts = strtotime($val);
     if ($ts !== false) return date('Y-m-d', $ts);
-    return $val;
+    return '';
 }
 
 function get_field($row, $keys) {
@@ -122,10 +136,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $messageType = 'error';
             } else {
                 $cd_val = ($clearance_date !== '') ? "'$clearance_date'" : 'NULL';
+                $dh_val = ($date_hired      !== '') ? "'$date_hired'"     : 'NULL';
                 $sql = "INSERT INTO res
                         (week, effective_date, employee_id, name, date_hired, grp, hr_summary, department, position, clearance_date, wifi, goplus, imapps, xo_scanpack, email_address, ad_email)
                         VALUES
-                        ('$week','$effective_date','$employee_id','$name','$date_hired','$grp','$hr_summary','$department','$position',$cd_val,$wifi,$goplus,$imapps,$xo_scanpack,'$email_address','$ad_email')";
+                        ('$week','$effective_date','$employee_id','$name',$dh_val,'$grp','$hr_summary','$department','$position',$cd_val,$wifi,$goplus,$imapps,$xo_scanpack,'$email_address','$ad_email')";
                 if (mysqli_query($conn, $sql)) {
                     $message     = "Record for '$name' (ID: $employee_id) added successfully.";
                     $messageType = 'success';
@@ -161,12 +176,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $messageType = 'error';
             } else {
                 $cd_val = ($clearance_date !== '') ? "'$clearance_date'" : 'NULL';
+                $dh_val = ($date_hired      !== '') ? "'$date_hired'"     : 'NULL';
                 $sql = "UPDATE res SET
                             week           = '$week',
                             effective_date = '$effective_date',
                             employee_id    = '$employee_id',
                             name           = '$name',
-                            date_hired     = '$date_hired',
+                            date_hired     = $dh_val,
                             grp            = '$grp',
                             hr_summary     = '$hr_summary',
                             department     = '$department',
@@ -282,6 +298,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $r_effdate = normalise_date($r_effdate);
                         $r_hired   = normalise_date($r_hired);
                         $r_clear   = normalise_date($r_clear);
+                        $dh_val    = ($r_hired  !== '') ? "'$r_hired'"  : 'NULL';
+                        $cd_val    = ($r_clear  !== '') ? "'$r_clear'"  : 'NULL';
 
                         $r_week   = mysqli_real_escape_string($conn, $r_week);
                         $r_empid  = mysqli_real_escape_string($conn, $r_empid);
@@ -298,11 +316,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             continue;
                         }
 
-                        $cd_val = ($r_clear !== '') ? "'$r_clear'" : 'NULL';
                         $sql = "INSERT INTO res
                                 (week, effective_date, employee_id, name, date_hired, grp, hr_summary, department, position, clearance_date, wifi, goplus, imapps, xo_scanpack, email_address, ad_email)
                                 VALUES
-                                ('$r_week','$r_effdate','$r_empid','$r_name','$r_hired','$r_grp','$r_hrsumm','$r_dept','$r_pos',$cd_val,$r_wifi,$r_goplus,$r_imapps,$r_xo,'$r_email','$r_admail')";
+                                ('$r_week','$r_effdate','$r_empid','$r_name',$dh_val,'$r_grp','$r_hrsumm','$r_dept','$r_pos',$cd_val,$r_wifi,$r_goplus,$r_imapps,$r_xo,'$r_email','$r_admail')";
                         if (mysqli_query($conn, $sql)) {
                             $imported++;
                         } else {
@@ -326,19 +343,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 // ─── FETCH DATA ───────────────────────────────────────────────────
 $employees = array();
-/*
 $result    = mysqli_query($conn, "SELECT * FROM res ORDER BY effective_date DESC, week DESC");
-while ($row = mysqli_fetch_assoc($result)) {
-    $employees[] = $row;
-}
-*/
-
-$result = mysqli_query($conn, "SELECT * FROM res ORDER BY effective_date DESC, week DESC");
-
-if (!$result) {
-    die("SQL Error: " . mysqli_error($conn));
-}
-
 while ($row = mysqli_fetch_assoc($result)) {
     $employees[] = $row;
 }
@@ -415,504 +420,7 @@ if ($view === 'edit' && $edit_emp === null && isset($_GET['id'])) {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Resigned Employee Registry</title>
     <link rel="stylesheet" href="css/fonts.css">
-    <style>
-        :root {
-            --ink:     #0d0d0d;
-            --paper:   #f5f2eb;
-            --card:    #ffffff;
-            --accent:  #c1440e;
-            --accent2: #e8855a;
-            --muted:   #888;
-            --border:  #e2ddd5;
-            --success: #2d7a4f;
-            --info:    #1e5fa3;
-            --shadow:  0 2px 16px rgba(0,0,0,0.07);
-        }
-
-        * { margin:0; padding:0; box-sizing:border-box; }
-
-        body {
-            font-family: 'DM Sans', sans-serif;
-            background: var(--paper);
-            color: var(--ink);
-            min-height: 100vh;
-        }
-
-        .layout { display:-webkit-box; display:flex; min-height:100vh; }
-
-        /* ── SIDEBAR ── */
-        .sidebar {
-            width: 240px;
-            background: var(--ink);
-            color: #fff;
-            flex-shrink: 0;
-            display: -webkit-box;
-            display: flex;
-            -webkit-box-orient: vertical;
-            flex-direction: column;
-        }
-
-        .sidebar-brand {
-            padding: 28px 24px 20px;
-            border-bottom: 1px solid #2a2a2a;
-        }
-
-        .sidebar-brand h1 {
-            font-family: 'Syne', sans-serif;
-            font-size: 1.1rem;
-            font-weight: 800;
-            letter-spacing: -0.02em;
-            line-height: 1.2;
-        }
-
-        .sidebar-brand span {
-            display: block;
-            font-size: 0.7rem;
-            color: var(--accent2);
-            font-weight: 400;
-            margin-top: 3px;
-            letter-spacing: 0.05em;
-            text-transform: uppercase;
-        }
-
-        .sidebar-nav { padding:16px 0; flex:1; }
-
-        .nav-item {
-            display: -webkit-box;
-            display: flex;
-            -webkit-box-align: center;
-            align-items: center;
-            padding: 11px 24px;
-            color: #aaa;
-            text-decoration: none;
-            font-size: 0.88rem;
-            font-weight: 500;
-            gap: 10px;
-            border-left: 3px solid transparent;
-        }
-
-        .nav-item:hover  { color:#fff; background:#1a1a1a; }
-        .nav-item.active { color:#fff; border-left-color:var(--accent); background:#1a1a1a; }
-
-        .sidebar-footer {
-            padding: 16px 24px;
-            border-top: 1px solid #2a2a2a;
-            font-size: 0.75rem;
-            color: #555;
-        }
-
-        /* ── MAIN ── */
-        .main { flex:1; padding:36px 40px; overflow-y:auto; }
-
-        .page-header { margin-bottom:32px; }
-
-        .page-header h2 {
-            font-family: 'Syne', sans-serif;
-            font-size: 1.9rem;
-            font-weight: 800;
-            letter-spacing: -0.03em;
-        }
-
-        .page-header p { color:var(--muted); font-size:0.9rem; margin-top:4px; }
-
-        .alert {
-            padding: 13px 18px;
-            border-radius: 8px;
-            margin-bottom: 24px;
-            font-size: 0.88rem;
-            font-weight: 500;
-        }
-        .alert-success { background:#e9f7ef; color:var(--success); border:1px solid #b7dfc9; }
-        .alert-info    { background:#e8f0fb; color:var(--info);    border:1px solid #b8d0ef; }
-        .alert-error   { background:#fdf0ee; color:var(--accent);  border:1px solid #f5c3b5; }
-
-        /* ── STATS ── */
-        .stats-grid {
-            display: -webkit-box;
-            display: flex;
-            flex-wrap: wrap;
-            gap: 16px;
-            margin-bottom: 32px;
-        }
-
-        .stat-card {
-            background: var(--card);
-            border-radius: 12px;
-            padding: 22px 20px;
-            box-shadow: var(--shadow);
-            border: 1px solid var(--border);
-            position: relative;
-            overflow: hidden;
-            flex: 1;
-            min-width: 160px;
-        }
-
-        .stat-card::before {
-            content: '';
-            position: absolute;
-            top:0; left:0; right:0;
-            height: 3px;
-        }
-        .stat-card.orange::before { background:var(--accent); }
-        .stat-card.blue::before   { background:var(--info); }
-        .stat-card.green::before  { background:var(--success); }
-        .stat-card.purple::before { background:#7c4dff; }
-
-        .stat-label {
-            font-size: 0.75rem;
-            font-weight: 500;
-            color: var(--muted);
-            text-transform: uppercase;
-            letter-spacing: 0.07em;
-            margin-bottom: 8px;
-        }
-
-        .stat-value {
-            font-family: 'Syne', sans-serif;
-            font-size: 2.2rem;
-            font-weight: 800;
-            line-height: 1;
-        }
-
-        .stat-sub { font-size:0.78rem; color:var(--muted); margin-top:6px; }
-
-        /* ── DEPT / GROUP BARS ── */
-        .dept-section {
-            background: var(--card);
-            border-radius: 12px;
-            padding: 24px;
-            box-shadow: var(--shadow);
-            border: 1px solid var(--border);
-            margin-bottom: 32px;
-        }
-
-        .section-title {
-            font-family: 'Syne', sans-serif;
-            font-size: 1rem;
-            font-weight: 700;
-            margin-bottom: 20px;
-        }
-
-        .dept-bar-row { margin-bottom:14px; }
-
-        .dept-bar-label {
-            display: -webkit-box;
-            display: flex;
-            -webkit-box-pack: justify;
-            justify-content: space-between;
-            font-size: 0.83rem;
-            margin-bottom: 5px;
-            font-weight: 500;
-        }
-
-        .dept-bar-track { background:#f0ece4; border-radius:4px; height:8px; overflow:hidden; }
-        .dept-bar-fill  { height:100%; border-radius:4px; background:var(--accent); }
-
-        /* ── TABLE ── */
-        .table-card {
-            background: var(--card);
-            border-radius: 12px;
-            box-shadow: var(--shadow);
-            border: 1px solid var(--border);
-            overflow: hidden;
-        }
-
-        .table-wrapper { overflow-x:auto; }
-
-        .table-header {
-            padding: 20px 24px;
-            border-bottom: 1px solid var(--border);
-            display: -webkit-box;
-            display: flex;
-            -webkit-box-align: center;
-            align-items: center;
-            -webkit-box-pack: justify;
-            justify-content: space-between;
-            gap: 12px;
-            flex-wrap: wrap;
-        }
-
-        .table-header-actions { display:-webkit-box; display:flex; gap:10px; flex-wrap:wrap; }
-
-        .btn {
-            display: inline-block;
-            padding: 9px 18px;
-            border-radius: 8px;
-            font-family: 'DM Sans', sans-serif;
-            font-size: 0.85rem;
-            font-weight: 500;
-            cursor: pointer;
-            border: none;
-            text-decoration: none;
-        }
-
-        .btn-primary   { background:var(--accent); color:#fff; }
-        .btn-green     { background:#2d7a4f; color:#fff; }
-        .btn-blue      { background:var(--info); color:#fff; }
-
-        .btn-danger {
-            background: transparent;
-            color: var(--accent);
-            border: 1px solid #f5c3b5;
-            font-size: 0.8rem;
-            padding: 6px 12px;
-        }
-
-        .btn-edit {
-            background: transparent;
-            color: var(--info);
-            border: 1px solid #b8d0ef;
-            font-size: 0.8rem;
-            padding: 6px 12px;
-        }
-
-        .btn-secondary {
-            background: transparent;
-            color: var(--muted);
-            border: 1.5px solid var(--border);
-        }
-
-        table { width:100%; border-collapse:collapse; font-size:0.82rem; }
-
-        thead th {
-            padding: 11px 12px;
-            text-align: left;
-            background: #faf8f5;
-            font-size: 0.72rem;
-            font-weight: 600;
-            color: var(--muted);
-            text-transform: uppercase;
-            letter-spacing: 0.06em;
-            border-bottom: 1px solid var(--border);
-            white-space: nowrap;
-        }
-
-        tbody td {
-            padding: 11px 12px;
-            border-bottom: 1px solid var(--border);
-            vertical-align: middle;
-        }
-
-        tbody tr:last-child td { border-bottom:none; }
-        tbody tr:hover td { background:#faf8f5; }
-
-        .emp-name  { font-weight:600; font-size:0.875rem; }
-        .emp-sub   { font-size:0.75rem; color:var(--muted); margin-top:2px; }
-
-        .emp-id-badge {
-            display: inline-block;
-            background: #f0ece4;
-            color: #555;
-            font-size: 0.68rem;
-            font-weight: 600;
-            padding: 2px 7px;
-            border-radius: 4px;
-            font-family: monospace;
-            letter-spacing: 0.04em;
-        }
-
-        .week-badge {
-            display: inline-block;
-            background: #e8f0fb;
-            color: var(--info);
-            font-size: 0.7rem;
-            font-weight: 700;
-            padding: 2px 8px;
-            border-radius: 4px;
-            letter-spacing: 0.04em;
-        }
-
-        .grp-badge {
-            display: inline-block;
-            background: #f3eeff;
-            color: #5c35b5;
-            font-size: 0.7rem;
-            font-weight: 600;
-            padding: 2px 8px;
-            border-radius: 4px;
-        }
-
-        .badge { display:inline-block; padding:3px 10px; border-radius:99px; font-size:0.72rem; font-weight:600; }
-        .badge-resigned { background:#fdf0ee; color:var(--accent); }
-
-        .tick { display:inline-block; font-size:0.9rem; font-weight:700; width:22px; text-align:center; }
-        .tick-yes { color:var(--success); }
-        .tick-no  { color:#ccc; }
-
-        .ad-badge { display:inline-block; font-size:0.7rem; font-weight:700; padding:2px 8px; border-radius:4px; }
-        .ad-active   { background:#d4edda; color:#155724; }
-        .ad-disabled { background:#fdf0ee; color:#c1440e; }
-
-        /* ── FORM ── */
-        .form-card {
-            background: var(--card);
-            border-radius: 12px;
-            padding: 32px;
-            box-shadow: var(--shadow);
-            border: 1px solid var(--border);
-            max-width: 780px;
-        }
-
-        .form-section-label {
-            font-family: 'Syne', sans-serif;
-            font-size: 0.8rem;
-            font-weight: 700;
-            text-transform: uppercase;
-            letter-spacing: 0.08em;
-            color: var(--muted);
-            margin: 24px 0 14px;
-            padding-bottom: 8px;
-            border-bottom: 1px solid var(--border);
-            width: 100%;
-        }
-
-        .form-grid { display:-webkit-box; display:flex; flex-wrap:wrap; gap:18px; }
-
-        .form-group {
-            display: -webkit-box;
-            display: flex;
-            -webkit-box-orient: vertical;
-            flex-direction: column;
-            gap: 6px;
-            width: calc(50% - 9px);
-        }
-        .form-group.full  { width:100%; }
-        .form-group.third { width:calc(33.333% - 12px); }
-
-        label { font-size:0.8rem; font-weight:600; }
-
-        input[type=text], input[type=email], input[type=date],
-        input[type=number], select, textarea {
-            padding: 10px 13px;
-            border: 1.5px solid var(--border);
-            border-radius: 7px;
-            font-family: 'DM Sans', sans-serif;
-            font-size: 0.875rem;
-            background: #faf8f5;
-            color: var(--ink);
-            outline: none;
-            width: 100%;
-        }
-
-        input[type=text]:focus, input[type=date]:focus,
-        input[type=number]:focus, select:focus, textarea:focus {
-            border-color: var(--accent);
-            background: #fff;
-        }
-
-        textarea { resize:vertical; min-height:80px; }
-
-        /* ── CHECKBOXES ── */
-        .checkbox-group {
-            display: -webkit-box;
-            display: flex;
-            flex-wrap: wrap;
-            gap: 10px;
-            padding: 4px 0;
-        }
-
-        .checkbox-item {
-            display: -webkit-box;
-            display: flex;
-            -webkit-box-align: center;
-            align-items: center;
-            gap: 8px;
-            background: #faf8f5;
-            border: 1.5px solid var(--border);
-            border-radius: 8px;
-            padding: 10px 16px;
-            cursor: pointer;
-            font-size: 0.85rem;
-            font-weight: 600;
-        }
-
-        .checkbox-item input[type=checkbox] {
-            width: 16px;
-            height: 16px;
-            cursor: pointer;
-            margin: 0;
-            padding: 0;
-            border: none;
-            background: none;
-        }
-
-        .checkbox-item:hover { border-color:var(--accent); background:#fff; }
-
-        .form-actions { margin-top:24px; display:-webkit-box; display:flex; gap:12px; }
-
-        /* ── IMPORT PAGE ── */
-        .import-card {
-            background: var(--card);
-            border-radius: 12px;
-            padding: 32px;
-            box-shadow: var(--shadow);
-            border: 1px solid var(--border);
-            max-width: 680px;
-        }
-
-        .upload-zone {
-            border: 2px dashed var(--border);
-            border-radius: 10px;
-            padding: 40px 24px;
-            text-align: center;
-            background: #faf8f5;
-            cursor: pointer;
-            position: relative;
-        }
-
-        .upload-zone input[type=file] {
-            position: absolute;
-            top:0; left:0;
-            width:100%; height:100%;
-            opacity: 0;
-            cursor: pointer;
-        }
-
-        .upload-icon { font-size:2.5rem; margin-bottom:10px; opacity:0.5; }
-        .upload-zone p { font-size:0.9rem; color:var(--muted); }
-        .upload-zone strong { color:var(--ink); }
-
-        .file-name-display {
-            margin-top: 10px;
-            font-size: 0.82rem;
-            color: var(--accent);
-            font-weight: 600;
-            min-height: 18px;
-        }
-
-        .info-box {
-            background: #e8f0fb;
-            border: 1px solid #b8d0ef;
-            border-radius: 8px;
-            padding: 14px 18px;
-            font-size: 0.85rem;
-            color: var(--info);
-            margin-top: 20px;
-            line-height: 1.6;
-        }
-
-        .info-box strong { display:block; margin-bottom:6px; }
-
-        .col-pill {
-            display: inline-block;
-            background: #d0e2f7;
-            color: var(--info);
-            font-size: 0.73rem;
-            font-weight: 600;
-            padding: 3px 9px;
-            border-radius: 4px;
-            font-family: monospace;
-            margin: 2px 3px 2px 0;
-        }
-
-        .col-pill.optional { background:#eee; color:#666; }
-
-        .empty { text-align:center; padding:60px 20px; color:var(--muted); }
-        .empty-icon { font-size:3rem; margin-bottom:12px; opacity:0.4; }
-        .empty p { font-size:0.9rem; }
-
-        .action-cell { display:-webkit-box; display:flex; gap:6px; align-items:center; }
-    </style>
+	<link rel="stylesheet" href="css/style.css">
 </head>
 <body>
 <div class="layout">
@@ -1030,7 +538,8 @@ if ($view === 'edit' && $edit_emp === null && isset($_GET['id'])) {
                         <td><span class="emp-id-badge"><?php echo e(isset($emp['employee_id']) ? $emp['employee_id'] : '-'); ?></span></td>
                         <td>
                             <div class="emp-name"><?php echo e($emp['name']); ?></div>
-                            <div class="emp-sub"><?php echo e(isset($emp['hr_summary']) ? $emp['hr_summary'] : ''); ?></div>
+                            <div class="emp-sub"><?php echo e(isset($emp['email_address']) ? $emp['email_address'] : ''); ?></div>
+							<div class="emp-sub"><?php echo e(isset($emp['ad_email']) ? $emp['ad_email'] : ''); ?></div>
                         </td>
                         <td><?php echo isset($emp['grp']) && $emp['grp'] !== '' ? '<span class="grp-badge">' . e($emp['grp']) . '</span>' : '-'; ?></td>
                         <td><?php echo e($emp['department']); ?></td>
@@ -1053,7 +562,13 @@ if ($view === 'edit' && $edit_emp === null && isset($_GET['id'])) {
 
         <div class="table-card">
             <div class="table-header">
-                <span class="section-title" style="margin:0">Employee Records</span>
+                <div style="display:flex;align-items:center;gap:12px;">
+                    <span class="section-title" style="margin:0">Employee Records</span>
+                    <button class="table-toggle-btn" id="allRecordsToggle" onclick="toggleAllRecords()">
+                        <span class="toggle-arrow">&#9660;</span>
+                        <span class="toggle-label">Collapse</span>
+                    </button>
+                </div>
                 <div class="table-header-actions">
                     <a href="?download=csv" class="btn btn-blue">&#8595; Download CSV</a>
                     <a href="?view=import"  class="btn btn-green">&#8679; Import CSV</a>
@@ -1066,30 +581,38 @@ if ($view === 'edit' && $edit_emp === null && isset($_GET['id'])) {
                 <p>No records yet. <a href="?view=add">Add one now.</a></p>
             </div>
             <?php else: ?>
+            <div class="search-bar-wrap">
+                <div class="search-input-wrap">
+                    <span class="search-icon">&#128269;</span>
+                    <input type="text" class="search-input" id="recordSearch" placeholder="Search name, ID, department, position…" oninput="onSearch(this.value)">
+                    <button class="search-clear" id="searchClear" onclick="clearSearch()" title="Clear">&#10005;</button>
+                </div>
+            </div>
+            <div class="collapsible-body" id="allRecordsBody">
             <div class="table-wrapper">
-            <table>
+            <table id="allRecordsTable">
                 <thead>
                     <tr>
-                        <th>Week</th>
-                        <th>Effective Date</th>
-                        <th>Employee ID</th>
-                        <th>Name</th>
-                        <th>Date Hired</th>
-                        <th>Group</th>
-                        <th>HR Summary</th>
-                        <th>Department</th>
-                        <th>Position</th>
-                        <th>Clearance</th>
+                        <th class="sortable" data-col="0">Week</th>
+                        <th class="sortable" data-col="1">Effective Date</th>
+                        <th class="sortable" data-col="2">Employee ID</th>
+                        <th class="sortable" data-col="3">Name</th>
+                        <th class="sortable" data-col="4">Date Hired</th>
+                        <th class="sortable" data-col="5">Group</th>
+                        <th class="sortable" data-col="6">HR Summary</th>
+                        <th class="sortable" data-col="7">Department</th>
+                        <th class="sortable" data-col="8">Position</th>
+                        <th class="sortable" data-col="9">Clearance</th>
                         <th>WiFi</th>
                         <th>GO+</th>
                         <th>IMAPPS</th>
                         <th>XO/SCAN</th>
-                        <th>Email Address</th>
-                        <th>AD/Email</th>
+                        <th class="sortable" data-col="14">Email Address</th>
+                        <th class="sortable" data-col="15">AD/Email</th>
                         <th>Action</th>
                     </tr>
                 </thead>
-                <tbody>
+                <tbody id="allRecordsTbody">
                     <?php foreach ($employees as $emp): ?>
                     <?php
                         $wifi_val = isset($emp['wifi'])        ? (int)$emp['wifi']        : 0;
@@ -1136,6 +659,20 @@ if ($view === 'edit' && $edit_emp === null && isset($_GET['id'])) {
                 </tbody>
             </table>
             </div>
+            <div class="pagination-bar" id="paginationBar">
+                <div style="display:flex;align-items:center;gap:8px;">
+                    <span class="pagination-info" id="paginationInfo"></span>
+                    <select class="per-page-select" id="perPageSelect" onchange="changePerPage(this.value)">
+						<option value="5" selected>5 / page</option>
+                        <option value="10">10 / page</option>
+                        <option value="25">25 / page</option>
+                        <option value="50">50 / page</option>
+                        <option value="100">100 / page</option>
+                    </select>
+                </div>
+                <div class="pagination-controls" id="paginationControls"></div>
+            </div>
+            </div><!-- /collapsible-body -->
             <?php endif; ?>
         </div>
 
@@ -1212,7 +749,34 @@ if ($view === 'edit' && $edit_emp === null && isset($_GET['id'])) {
                         <select id="department" name="department" required>
                             <option value="">Select department...</option>
                             <?php
-                            $depts = array('Engineering','Marketing','HR','Finance','Operations','Sales','IT','Legal','Production','Warehouse','Quality','Admin','Other');
+                            $depts = array("Admin",
+											"Central Finance",
+											"Computer Marking Section",
+											"Corporate Communications",
+											"Corporate Internal Audit",
+											"Corporate IT - PARS",
+											"Cutting",
+											"Embroidery",
+											"Finance",
+											"Finishing",
+											"HR",
+											"IT",
+											"Legal",
+											"Logistics",
+											"Merchandising",
+											"Operations",
+											"Pattern Making Section",
+											"Printing",
+											"Production",
+											"Purchasing",
+											"Quality",
+											"Sales",
+											"Sewing",
+											"Shipping",
+											"Technical",
+											"Warehouse",
+											"Washing",
+											"Other");
                             foreach ($depts as $d) {
                                 $sel = ($f_dept === $d) ? ' selected' : '';
                                 echo '<option value="' . e($d) . '"' . $sel . '>' . e($d) . '</option>';
@@ -1338,6 +902,8 @@ if ($view === 'edit' && $edit_emp === null && isset($_GET['id'])) {
 
     </main>
 </div>
+<script src="js/script.js"></script>
+
 </body>
 </html>
 <?php mysqli_close($conn); ?>
